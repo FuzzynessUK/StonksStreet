@@ -1,4 +1,4 @@
-# Scuffed Street
+# Stonks Street
 
 An original property-trading board game for 2–4 players, made in Godot 4.7.
 Buy lots, renovate them, trade block bonds and race to a net-worth goal.

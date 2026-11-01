@@ -1,4 +1,4 @@
-# Scuffed Street — design
+# Stonks Street — design
 
 A property-trading board game for 2–4 players (humans or computer). Players
 travel a looping board, buy lots in junkyard-town blocks, invest in them,

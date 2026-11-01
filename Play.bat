@@ -1,5 +1,5 @@
 @echo off
-rem Launches Scuffed Street without the editor. Set GODOT to your Godot exe
+rem Launches Stonks Street without the editor. Set GODOT to your Godot exe
 rem folder if it is not the one below. Extra arguments are passed to the game,
 rem e.g.  Play.bat --watch   (an all-CPU game).
 setlocal

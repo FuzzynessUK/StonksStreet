@@ -565,7 +565,7 @@ func _start_menu() -> void:
 	board_view.build(null)
 	board_map.visible = false
 	banner.text = ""
-	players_label.text = "[b]Scuffed Street[/b]"
+	players_label.text = "[b]Stonks Street[/b]"
 	for c in player_rows.get_children():
 		player_rows.remove_child(c)
 		c.queue_free()
