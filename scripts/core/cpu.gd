@@ -42,7 +42,7 @@ static func wants_buyout(g: GameState, p: PlayerState, id: int, cost: int) -> bo
 ## Picks the branch closest to the Depot when at goal, else to an unpunched Relay.
 static func pick_branch(g: GameState, p: PlayerState, opts: Array[int]) -> int:
 	var targets: Array[int] = []
-	if p.at_goal:
+	if g.wins_at_bank(p):
 		targets.append(g.board.depot)
 	else:
 		for r in g.board.relay_ids():

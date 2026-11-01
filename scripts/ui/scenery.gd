@@ -16,12 +16,12 @@ extends Node3D
 ##
 ##   lagoon   the Pirate Sea with the water still and, instead of the
 ##            seagulls and the buoy, a fish leaping out of it now and then
-##            (Turtle Islands)
+##            (Drifting Isles)
 ##   sea      a rough sea of big rolling waves under an overcast sky, further
-##            down than the other themes; two big pirate ships ride them,
-##            trading cannon fire, angled across the board; seagulls wheeling
-##            overhead; (flash, smoke, a ball
-##            arcing over, a splash); a third ship far off, rocks, barrels
+##            down than the other themes; one huge pirate ship sailing
+##            diagonally across under the board, firing broadsides either
+##            side (flash, smoke, a ball arcing over, a splash); seagulls
+##            wheeling overhead; rocks, barrels
 ##   space    stars all round, planets circling slowly below the board, each
 ##            on its own level so they never meet (a gas giant, a red rocky
 ##            one, an ice world, a blue-green one, a small moon), meteors
@@ -32,7 +32,8 @@ extends Node3D
 ##            embers rising
 ##   castle   a historic fortress: massive curtain walls with battlements,
 ##            square towers, a gatehouse with a portcullis, the keep behind,
-##            a moat, banners, soldiers patrolling the walls, cannons;
+##            a moat behind and at the sides (the courtyard runs on past the
+##            bottom of the screen), banners, soldiers patrolling the walls, cannons;
 ##            catapults flinging, barrels, crates and hay in the courtyard;
 ##            a great army filling the ground outside the back gate (ranks of
 ##            soldiers in companies, knights on horseback, standard bearers,
@@ -47,20 +48,46 @@ extends Node3D
 ##   storm    dark storm clouds drifting slowly below the board; the weather
 ##            turns from rain to hail to snow; lightning flickers inside the
 ##            clouds, followed by thunder
+##   market   a crowded night-market food alley below the board (Spiral
+##            Market), at an angle across the view under a dark sky: glowing
+##            food counters both sides, steam, neon signs on the shopfronts
+##            and over the alley, a crowd; the board stays in soft moonlight
+##   sky      high above the clouds on a bright day (Cloud Hop): white
+##            clouds drifting slowly far below over a sunlit cloud floor,
+##            small grassy rocks floating in the distance, bobbing, hot-air
+##            balloons drifting past, birds wheeling under the board
 
 const B := preload("res://scripts/ui/board_view.gd")  # its model builders
-const THEMES := ["sea", "lagoon", "space", "volcano", "castle", "racing", "storm"]
+const THEMES := ["sea", "lagoon", "space", "volcano", "castle", "racing", "storm", "market", "sky"]
 const NAMES := {"sea": "Pirate Sea", "lagoon": "Calm Sea", "space": "Space", "volcano": "Lava Dungeon",
-		"castle": "Grand Castle", "racing": "Slot-Car Grand Prix", "storm": "Storm Clouds"}
+		"castle": "Grand Castle", "racing": "Slot-Car Grand Prix", "storm": "Storm Clouds", "market": "Night Market",
+		"sky": "Above the Clouds"}
 const TEXTURE_SIZE := 256
 const DROP := 3.0  # how far below the board the scenery lies (most themes)
-const SEA_DROP := 4.2  # Pirate Sea: how far below the board the water lies
+const SEA_DROP := 4.2  # Pirate Sea: how far below the board the water lies (things stand in it)
+const SHIP_DROP := 10.0  # Pirate Sea with nothing standing in it: deeper, room for the big ship
 const WEATHER_SPELL := 25.0  # Storm Clouds: seconds of rain, then hail, then snow
 const THUNDER_DELAY := 0.7  # seconds from a flash to its thunderclap
 const BACK_WALL := 1.8  # Grand Castle: the back wall's height
 const ARMY_DEPTH := 7.0  # how far back from the moat the army fills
 const TRACK_POINTS := 160  # points along each slot-car track
 const RACING_HAZE := 0.38  # how much the haze over the F1 tracks lightens them
+const MARKET_DROP := 9.0  # Night Market: how far below the board the alley lies
+const MARKET_SCALE := 2.2  # the alley's size: everything in it, built at a person's scale, made this much bigger
+const MARKET_HAZE := 0.25  # how much the dark haze over the market dims it
+const MARKET_PUDDLES := 9
+const MARKET_LITTER := 60
+const MARKET_ANGLE := -0.6  # radians the alley is turned across the view
+const MARKET_ALLEY := 1.8  # the alley's width between its two rows of stalls
+const MARKET_STEAM := 0.3  # the share of stalls cooking, steam rising
+const MARKET_CROWD := 25
+const MARKET_HANGING_SIGNS := 5
+const MARKET_STRING_GAP := 2.2  # from one string of lights across the alley to the next (before the scale)
+const MARKET_STRING_SAG := 0.45  # how far a string dips in the middle: a slight C
+const MARKET_COVERS := 3  # roof covers over stretches of the alley
+const MARKET_COVER_COLOURS := [Color("#2a5a9a"), Color("#3a6a4a"), Color("#7a3a32")]
+const MARKET_NEON := [Color("#ff3a8a"), Color("#3ae8ff"), Color("#ffe03a"), Color("#8aff5a")]
+const MARKET_FOOD := [Color("#e8402a"), Color("#f2a020"), Color("#7ac83a"), Color("#f2d040"), Color("#c86a3a"), Color("#f2e0c0")]
 const WAVES := [[0.7, 0.3, 0.0, 1.1], [0.45, 0.0, 0.42, -0.9], [0.12, 0.8, 0.8, 1.8]]  # [height, kx, kz, speed]
 const SEA_SHADER := """
 shader_type spatial;
@@ -108,6 +135,9 @@ var drop := DROP  # how far below the board this theme lies
 var shrink := 1.0  # the whole backdrop's size (Racing: smaller, so more of it shows)
 var shift_back := 0.0  # how far back it sits, per unit of drop (Castle: centred under the board)
 var wave_scale := 1.0  # the sea's waves (Calm Sea: 0, still water)
+var shallow := false  # the sea lies SEA_DROP down, not SHIP_DROP (make)
+var frame_margin := 2.6  # room round the board in the whole-board view (Castle: less, closer in)
+var frame_back := 0.0  # how far the whole-board view looks back past the board's middle (Castle: more of the army)
 
 signal thunder  # a thunderclap after a lightning flash (Storm Clouds)
 
@@ -121,8 +151,11 @@ var _textures := {}  # textures made for this backdrop, by their two colours
 var _sea: ShaderMaterial  # the waves, kept in step with the ships
 
 
-static func make(theme: String, lo: Vector3, hi: Vector3) -> Scenery:
+## `shallow`: the board has things standing in the sea (islands, turtles),
+## which reach down SEA_DROP.
+static func make(theme: String, lo: Vector3, hi: Vector3, shallow := false) -> Scenery:
 	var s := Scenery.new()
+	s.shallow = shallow
 	s._rng.seed = 1964
 	s._centre = (lo + hi) / 2
 	s._half = Vector2(hi.x - lo.x, hi.z - lo.z) / 2 + Vector2(1.6, 1.6)
@@ -138,6 +171,10 @@ static func make(theme: String, lo: Vector3, hi: Vector3) -> Scenery:
 			s._racing()
 		"storm":
 			s._storm()
+		"market":
+			s._market()
+		"sky":
+			s._sky_high()
 		"lagoon":  # the Pirate Sea with the water still
 			s.wave_scale = 0.0
 			s._pirate_sea()
@@ -208,6 +245,400 @@ func _no_shadows(node: Node) -> void:
 
 # --- themes ---------------------------------------------------------------
 
+## Night Market: one crowded food alley below the board, at night, running
+## at an angle across the view (MARKET_ANGLE). Food stalls line both sides,
+## their counters glowing with trays of food under small dark awnings, steam
+## rising off some; a row of taller shopfronts along the far side carries neon
+## signs, a few more hang out over the alley, and the near side stays low so
+## the street shows. A crowd packs the alley. Under a deep blue-black sky and
+## a dark haze; the board itself stays in soft moonlight. Repeated pieces are
+## drawn in batches (_batch) so it stays light.
+func _sky_high() -> void:
+	sky = Color("#86c0ea")
+	ambient = Color("#d8e8f8")
+	ambient_energy = 0.5
+	sun_color = Color("#fff6e4")
+	sun_energy = 0.95
+	fog = 0.002
+	# A sunlit floor of cloud far below, drifting, so there is never bare sky
+	# under the board, and white clouds drifting over it.
+	var floor_m := textured(Color("#2e5a86"), Color("#45739e"), 6.0)  # a deep, soft blue: easy on the eye, the white clouds stand out
+	_add(_slab(Vector3(_reach * 9, 0.1, _reach * 9), floor_m), _centre - Vector3(0, 10.0, 0))
+	_anims.append(func(t: float): floor_m.uv1_offset = Vector3(t * 0.002, 0, 0))
+	var white := textured(Color("#e6edf6"), Color("#ffffff"), 2.0)
+	var soft := textured(Color("#d4dfec"), Color("#f2f6fb"), 2.0)
+	_clouds(12, -9.0, -4.0, [white, soft], 0.5)
+	# Small grassy rocks floating in the distance, bobbing slowly.
+	var earth := textured(Color("#5a4430"), Color("#86684a"), 0.8)
+	var grass := textured(Color("#4a8a3a"), Color("#6aae4e"), 1.0)
+	for i in 6:
+		var rock := Node3D.new()
+		var size := _rng.randf_range(0.8, 1.6)
+		var under := B._cyl(size, 0.1, size * 1.6, Color.WHITE)
+		under.material_override = earth
+		under.position.y = -size * 0.8
+		rock.add_child(under)
+		var top := B._cyl(size * 1.02, size * 1.02, 0.18, Color.WHITE)
+		top.material_override = grass
+		rock.add_child(top)
+		var tree := B._cyl(0.0, size * 0.35, size * 0.9, Color.WHITE)  # a little pine
+		tree.material_override = grass
+		tree.position = Vector3(size * 0.3, size * 0.5, 0)
+		rock.add_child(tree)
+		var at := _spot(TAU * i / 6.0 + _rng.randf_range(-0.3, 0.3), _rng.randf_range(4.0, 9.0)) \
+				+ Vector3(0, _rng.randf_range(-4.0, -1.0), 0)
+		_add(rock, at)
+		var phase := _rng.randf() * TAU
+		_anims.append(func(t: float): rock.position.y = at.y + sin(t * 0.4 + phase) * 0.25)
+	# Hot-air balloons drifting slowly past, at their own heights and speeds.
+	var colours := [[Color("#e04a3a"), Color("#f4d04a")], [Color("#3a7ad0"), Color("#f4f4f0")], [Color("#5ab04a"), Color("#f49a3a")]]
+	for i in colours.size():
+		var balloon := Node3D.new()
+		for k in 8:  # the envelope in coloured gores
+			var gore := _ball(1.0, Color.WHITE)
+			gore.material_override = B._material(colours[i][k % 2])
+			gore.scale = Vector3(0.42, 1.15, 1.0)
+			gore.rotation.y = PI * k / 8.0
+			gore.position.y = 1.6
+			balloon.add_child(gore)
+		balloon.add_child(B._box(Vector3(0.45, 0.35, 0.45), Color("#7a5a3a")))  # the basket
+		for c in [Vector3(-0.2, 0, -0.2), Vector3(0.2, 0, -0.2), Vector3(-0.2, 0, 0.2), Vector3(0.2, 0, 0.2)]:
+			var rope := B._cyl(0.01, 0.01, 0.75, Color("#3a2a1a"))
+			rope.position = c + Vector3(0, 0.55, 0)
+			balloon.add_child(rope)
+		_add(balloon, _centre)
+		var span := _reach * 4.0
+		var y := -2.0 - i * 1.5
+		var z := _centre.z + (_half.y + 4.0) * (-1.0 if i % 2 == 0 else 0.4) + i
+		var x0 := _rng.randf() * span
+		var speed := 0.15 + i * 0.05
+		_anims.append(func(t: float):
+			balloon.position = Vector3(_centre.x - span / 2 + fmod(x0 + t * speed, span), y + sin(t * 0.5 + i) * 0.2, z))
+	# Birds wheeling under the board in wide lazy circles.
+	for i in 6:
+		var bird := _seagull()
+		_add(bird, _centre)
+		var r := _rng.randf_range(_reach * 0.4, _reach * 1.1)
+		var height := _rng.randf_range(-3.0, -1.2)
+		var speed := _rng.randf_range(0.15, 0.3) * (1 if i % 2 == 0 else -1)
+		var start := _rng.randf() * TAU
+		var wing_l: Node3D = bird.get_meta("left")
+		var wing_r: Node3D = bird.get_meta("right")
+		_anims.append(func(t: float):
+			var a := start + t * speed
+			bird.position = _centre + Vector3(cos(a) * r, height, sin(a) * r * 0.7)
+			var along := Vector3(-sin(a), 0, cos(a) * 0.7) * signf(speed)
+			bird.rotation = Vector3(0, atan2(along.x, along.z), -0.3 * signf(speed))
+			var w := sin(t * 6.0 + start) * 0.6 if fmod(t + start, 4.0) < 2.5 else 0.1
+			wing_l.rotation.z = w
+			wing_r.rotation.z = -w)
+
+
+func _market() -> void:
+	sky = Color("#0a0f24")
+	drop = MARKET_DROP
+	shift_back = 0.65  # the alley centred under the board as seen
+	ambient = Color("#5a6a9a")  # moonlit blue fill: the board stays readable
+	ambient_energy = 0.55
+	sun_color = Color("#c8d0ff")
+	sun_energy = 0.7
+	fog = 0.02
+	var reach := _reach * 1.6 + 6.0
+	# The alley, built along its own x and turned to its angle under the board.
+	var lane := Node3D.new()
+	_add(lane, _centre)
+	lane.rotation.y = MARKET_ANGLE
+	lane.scale = Vector3.ONE * MARKET_SCALE  # big: the alley fills the view under the board
+	# It all fills the whole backdrop, off the screen every way: the alley
+	# runs on past both ends and rooftops pack the ground either side.
+	var fill := reach / MARKET_SCALE * 1.3  # how far out it goes (before the scale)
+	var half := fill  # half the alley's length
+	var more := half / (_reach * 0.75)  # how much longer that is than one board's worth
+	var w := MARKET_ALLEY / 2
+	var parts := {}
+	_part(parts, "paving", Vector3(fill * 2.6, 0.04, fill * 2.6), Vector3(0, -0.03, 0))  # tarmac under everything (just above the ground, scaled)
+	# A used street, not a grid: kerbs along both sides where the stalls
+	# stand, puddles catching the stall lights, litter underfoot.
+	for side in [-1, 1]:
+		_part(parts, "kerb", Vector3(half * 2 + 2.0, 0.06, 0.12), Vector3(0, 0.0, side * (w - 0.05)))
+	for k in int(MARKET_PUDDLES * more):
+		var size := Vector3(_rng.randf_range(0.3, 0.8), 0.01, _rng.randf_range(0.2, 0.45))
+		_part(parts, "puddle", size, Vector3(_rng.randf_range(-half, half), -0.005, _rng.randf_range(-w * 0.7, w * 0.7)),
+				Basis(Vector3.UP, _rng.randf() * PI))
+	for k in int(MARKET_LITTER * more):
+		var bits := ["card", "paper", "cup"]
+		var bit: String = bits[_rng.randi() % bits.size()]
+		var size := Vector3(0.18, 0.012, 0.14) if bit == "card" else Vector3(0.07, 0.006, 0.05) if bit == "paper" \
+				else Vector3(0.04, 0.06, 0.04)
+		_part(parts, bit, size, Vector3(_rng.randf_range(-half, half), -0.01 + size.y / 2,
+				_rng.randf_range(-w - 0.6, w + 0.6)), Basis(Vector3.UP, _rng.randf() * TAU))
+	for side in [-1, 1]:  # -1: the far side (tall shopfronts), 1: the near side (low)
+		var x := -half
+		while x < half:
+			var sw := _rng.randf_range(0.7, 1.4)  # each stall its own width
+			_food_stall(lane, Vector3(x + sw / 2, 0, side * (w + 0.35)), sw, side, parts)
+			x += sw + _rng.randf_range(0.05, 0.25)
+	# Shopfronts along the far side, behind its stalls, neon on their fronts.
+	var x := -half - 0.5
+	while x < half + 0.5:
+		var bw := _rng.randf_range(1.4, 2.4)
+		var h := _rng.randf_range(1.8, 2.4)  # clear of the board, scaled up
+		var at := Vector3(x + bw / 2, 0, -w - 1.6)
+		_part(parts, "walls", Vector3(bw - 0.05, h, 1.0), at + Vector3(0, h / 2, 0))
+		for k in int(bw / 0.5):
+			if _rng.randf() < 0.5:
+				_part(parts, "window_lit" if _rng.randf() < 0.5 else "window_dark", Vector3(0.26, 0.28, 0.04),
+						at + Vector3(-bw / 2 + 0.3 + k * 0.5, h - 0.4, 0.51))
+		if _rng.randf() < 0.7:
+			_part(parts, "neon%d" % (_rng.randi() % MARKET_NEON.size()), Vector3(bw * 0.5, 0.2, 0.04),
+					at + Vector3(0, _rng.randf_range(1.3, h - 0.7), 0.53))
+		x += bw
+	# A low row of shopfronts along the near side, so the alley is walled on
+	# both sides but still shows over them.
+	x = -half - 0.5
+	while x < half + 0.5:
+		var bw := _rng.randf_range(1.4, 2.4)
+		var h := _rng.randf_range(0.7, 1.1)
+		_part(parts, "walls", Vector3(bw - 0.05, h, 1.0), Vector3(x + bw / 2, h / 2, w + 1.6))
+		x += bw
+	# Rooftops packing the ground beyond both rows, out past the screen.
+	for side in [-1, 1]:
+		var z := w + 2.2
+		while z < fill:
+			var depth := _rng.randf_range(1.5, 2.5)
+			x = -half - 1.0
+			while x < half + 1.0:
+				var bw := _rng.randf_range(1.4, 2.6)
+				var h := _rng.randf_range(1.4, 2.4) if side < 0 else _rng.randf_range(0.6, 1.2)  # low in front
+				var at := Vector3(x + bw / 2, 0, side * (z + depth / 2))
+				_part(parts, "roofs", Vector3(bw - 0.08, h, depth - 0.08), at + Vector3(0, h / 2, 0))
+				if _rng.randf() < 0.35:  # a water tank or an air conditioner on top
+					_part(parts, "cart", Vector3(0.3, 0.25, 0.3), at + Vector3(_rng.randf_range(-bw / 4, bw / 4), h + 0.12,
+							_rng.randf_range(-depth / 4, depth / 4)))
+				if _rng.randf() < 0.3:  # a lit window on the side facing the camera
+					_part(parts, "window_lit", Vector3(0.24, 0.24, 0.04), at + Vector3(_rng.randf_range(-bw / 3, bw / 3),
+							h * 0.6, depth / 2 + 0.01))
+				x += bw
+			z += depth
+	# A few signs hung out over the alley.
+	for k in int(MARKET_HANGING_SIGNS * more):
+		var sx := _rng.randf_range(-half * 0.85, half * 0.85)
+		_part(parts, "neon%d" % (_rng.randi() % MARKET_NEON.size()), Vector3(0.05, 0.3, 0.55),
+				Vector3(sx, 1.6, -w + 0.1))
+	# Strings of lights across the alley, each sagging in a slight C.
+	_light_strings(half, w, parts)
+	# A few roof covers, each over a short stretch of one side's stalls,
+	# sloping down towards the alley: the street itself stays open.
+	var covers := int(MARKET_COVERS * more)
+	for k in covers:
+		var cx := lerpf(-half * 0.8, half * 0.8, (k + _rng.randf_range(0.2, 0.8)) / covers)
+		var length := _rng.randf_range(1.2, 1.8)
+		var s := -1 if k % 2 == 0 else 1  # far side, near side, far side...
+		var colour := "cover%d" % (k % MARKET_COVER_COLOURS.size())
+		_part(parts, colour, Vector3(length, 0.04, 1.1), Vector3(cx, 1.5, s * (w + 0.4)),
+				Basis(Vector3.RIGHT, -0.25 * s))
+		for end: float in [-length / 2 + 0.05, length / 2 - 0.05]:  # its posts at the back
+			_part(parts, "wire", Vector3(0.04, 1.6, 0.04), Vector3(cx + end, 0.8, s * (w + 0.9)))
+	# The crowd.
+	for i in int(MARKET_CROWD * more):  # as busy all along
+		_alley_shopper(lane, half, w)
+	var box := BoxMesh.new()
+	var ball := SphereMesh.new()
+	ball.radius = 0.5
+	ball.height = 1.0
+	ball.radial_segments = 10
+	ball.rings = 6
+	var mats := {
+		"paving": textured(Color("#2c2a32"), Color("#4a4652"), 0.9, 0.18, 0.45),  # worn, damp tarmac, faintly lit by the stalls
+		"kerb": B._material(Color("#5a5660")),
+		"puddle": _puddle_material(),
+		"card": B._material(Color("#8a6a44")),
+		"paper": B._material(Color("#c8c4b8")),
+		"cup": B._material(Color("#e8e4dc")),
+		"cart": B._material(Color("#8a8e96")),
+		"awning": B._material(Color("#1e2a3a")),
+		"table": B._material(Color("#5a4030")),
+		"crate": B._material(Color("#8a6a42")),
+		"glass": B._material(Color(0.85, 0.95, 1.0), 0.35),
+		"grill": B._material(Color("#ff6a2a"), 1.2),  # glowing coals
+		"tray": B._material(Color("#ffd890"), 0.9),  # the counters glow under their lamps
+		"walls": textured(Color("#1e1e26"), Color("#2e2c34"), 0.8),
+		"roofs": textured(Color("#18181e"), Color("#26242c"), 0.6),
+		"window_lit": B._material(Color("#ffcf7a"), 0.8),
+		"window_dark": B._material(Color("#141820")),
+		"bulb": B._material(Color("#ffd890"), 1.6),
+		"lantern": B._material(Color("#ff3a1a"), 1.6),
+		"wire": B._material(Color("#0e0e12")),
+	}
+	for k in MARKET_NEON.size():
+		mats["neon%d" % k] = B._material(MARKET_NEON[k], 1.2)
+	for k in MARKET_FOOD.size():
+		mats["food%d" % k] = B._material(MARKET_FOOD[k], 0.3)
+	for k in MARKET_COVER_COLOURS.size():
+		mats["cover%d" % k] = B._material((MARKET_COVER_COLOURS[k] as Color).darkened(0.2))
+		mats["parasol%d" % k] = B._material((MARKET_COVER_COLOURS[k] as Color).lightened(0.1))
+	for key in parts:
+		var round: bool = key.begins_with("food") or key.begins_with("parasol") or key == "bulb" or key == "lantern"
+		_batch(lane, ball if round else box, mats[key], parts[key])
+	# A dark haze between the board and the alley.
+	var haze := MeshInstance3D.new()
+	var sheet := PlaneMesh.new()
+	sheet.size = Vector2.ONE * reach * 8
+	haze.mesh = sheet
+	var haze_m := StandardMaterial3D.new()
+	haze_m.albedo_color = Color(sky, MARKET_HAZE)
+	haze_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	haze_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	haze.material_override = haze_m
+	_add(haze, _centre + Vector3(0, drop * 0.55, 0))
+
+
+## Strings of lights across the alley (in its own frame, `half` its
+## half-length, `w` its half-width), one every MARKET_STRING_GAP along it:
+## each hangs from the shopfronts on the far side to poles on the near side
+## and dips in a slight C between them (lowest in the middle), small warm
+## bulbs along it and a red lantern at the bottom of the dip.
+func _light_strings(half: float, w: float, parts: Dictionary) -> void:
+	var reach := w + 0.9  # from just past the stalls on one side to the other
+	var top := 2.0
+	var x := -half + MARKET_STRING_GAP * 0.5
+	while x < half:
+		_part(parts, "wire", Vector3(0.03, top, 0.03), Vector3(x, top / 2, reach))  # its pole, near side
+		var steps := 14
+		for k in steps + 1:
+			var u := -1.0 + 2.0 * k / steps  # -1 far end .. 1 near end
+			var y := top - MARKET_STRING_SAG * (1.0 - u * u)
+			_part(parts, "bulb", Vector3.ONE * 0.06, Vector3(x, y - 0.04, u * reach))
+		_part(parts, "lantern", Vector3(0.16, 0.13, 0.16), Vector3(x, top - MARKET_STRING_SAG - 0.12, 0))
+		x += MARKET_STRING_GAP
+
+
+## A food stall at `at` (in the alley's own frame) on `side` of it (-1 far, 1
+## near): a steel cart whose counter glows with trays of food, a small dark
+## awning over it (only on the far side, so the near one never hides the
+## alley), steam over some.
+func _food_stall(lane: Node3D, at: Vector3, sw: float, side: int, parts: Dictionary) -> void:
+	var steam := _rng.randf() < MARKET_STEAM
+	var top := 0.52  # where the food sits
+	match _rng.randi() % 5:
+		0:  # a steel cart with a glowing counter
+			_part(parts, "cart", Vector3(sw, 0.5, 0.6), at + Vector3(0, 0.25, 0))
+			_part(parts, "tray", Vector3(sw * 0.9, 0.04, 0.45), at + Vector3(0, top, 0))
+		1:  # a long low table, crates stacked at one end
+			top = 0.4
+			_part(parts, "table", Vector3(sw, 0.38, 0.5), at + Vector3(0, 0.19, 0))
+			for k in _rng.randi_range(1, 3):
+				_part(parts, "crate", Vector3.ONE * 0.28, at + Vector3(sw / 2 - 0.1, 0.14 + k * 0.29 - 0.29, side * 0.35))
+		2:  # a tall glass display case, glowing, food on its shelves
+			top = 0.75
+			_part(parts, "cart", Vector3(sw, 0.45, 0.55), at + Vector3(0, 0.22, 0))
+			_part(parts, "glass", Vector3(sw * 0.9, 0.5, 0.45), at + Vector3(0, 0.7, 0))
+			_part(parts, "tray", Vector3(sw * 0.85, 0.03, 0.4), at + Vector3(0, 0.47, 0))
+		3:  # under its own round parasol
+			_part(parts, "table", Vector3(sw * 0.8, 0.45, 0.5), at + Vector3(0, 0.22, 0))
+			top = 0.47
+			_part(parts, "wire", Vector3(0.03, 1.25, 0.03), at + Vector3(0, 0.62, side * 0.3))
+			_part(parts, "parasol%d" % (_rng.randi() % MARKET_COVER_COLOURS.size()), Vector3(sw * 1.1, 0.14, sw * 1.1),
+					at + Vector3(0, 1.25, side * 0.3))
+		4:  # a grill with a hood over it, always smoking
+			steam = true
+			_part(parts, "cart", Vector3(sw, 0.55, 0.55), at + Vector3(0, 0.27, 0))
+			_part(parts, "grill", Vector3(sw * 0.85, 0.04, 0.4), at + Vector3(0, 0.57, 0))
+			_part(parts, "cart", Vector3(sw * 0.9, 0.08, 0.5), at + Vector3(0, 1.1, side * 0.1))
+			_part(parts, "wire", Vector3(0.03, 0.5, 0.03), at + Vector3(-sw * 0.4, 0.82, side * 0.2))
+			top = 0.6
+	var food := "food%d" % (_rng.randi() % MARKET_FOOD.size())
+	for k in int(sw * 7):
+		_part(parts, food if _rng.randf() < 0.7 else "food%d" % (_rng.randi() % MARKET_FOOD.size()),
+				Vector3.ONE * 0.09, at + Vector3(_rng.randf_range(-sw * 0.4, sw * 0.4), top + 0.05,
+				_rng.randf_range(-0.15, 0.15)))
+	if side < 0 and _rng.randf() < 0.6:  # a small awning on the far side
+		_part(parts, "awning", Vector3(sw + 0.05, 0.03, 0.8), at + Vector3(0, 1.25, -0.15),
+				Basis(Vector3.RIGHT, 0.3))
+	if steam:
+		_steam(lane, at + Vector3(0, top + 0.1, 0))
+
+
+## Someone in the crowd, wandering up and down the alley (in its own frame,
+## `half` its half-length, `w` its half-width).
+func _alley_shopper(lane: Node3D, half: float, w: float) -> void:
+	var person := Node3D.new()
+	var body := MeshInstance3D.new()
+	body.mesh = _capsule(0.11, 0.48)
+	body.material_override = B._material(Color.from_hsv(_rng.randf(), 0.45, _rng.randf_range(0.4, 0.85)))
+	body.position.y = 0.3
+	person.add_child(body)
+	var head := _ball(0.085, Color("#2a2420") if _rng.randf() < 0.7 else Color("#b8906c"))  # hair, seen from above
+	head.position.y = 0.64
+	person.add_child(head)
+	var mid := _rng.randf_range(-half * 0.9, half * 0.9)
+	var span := minf(_rng.randf_range(0.5, 2.5), half - absf(mid))
+	var speed := _rng.randf_range(0.05, 0.14)
+	var p := _rng.randf() * TAU
+	person.position = Vector3(mid, -0.08, _rng.randf_range(-w * 0.8, w * 0.8))
+	lane.add_child(person)
+	_anims.append(func(t: float):
+		person.position.x = mid + sin(t * speed + p) * span
+		person.rotation.y = PI / 2 if cos(t * speed + p) > 0.0 else -PI / 2
+		person.position.y = -0.08 + absf(sin(t * 6.0 + p)) * 0.025)
+
+
+## A puddle on the street: dark, glossy water with a faint warm sheen from
+## the stall lights.
+static func _puddle_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color("#14161e")
+	m.roughness = 0.05
+	m.metallic = 0.4
+	m.emission_enabled = true
+	m.emission = Color("#5a3a1a")
+	m.emission_energy_multiplier = 0.5
+	return m
+
+
+## Steam rising off a cooking stall at `at` (in `parent`): a few soft puffs
+## drifting up, swelling and fading, over and over.
+func _steam(parent: Node3D, at: Vector3) -> void:
+	for k in 3:
+		var puff := _ball(0.12, Color.WHITE)
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(1, 1, 1, 0.0)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		puff.material_override = m
+		puff.position = at
+		parent.add_child(puff)
+		var offset := k / 3.0
+		var speed := _rng.randf_range(0.35, 0.5)
+		_anims.append(func(t: float):
+			var u := fposmod(t * speed + offset, 1.0)
+			puff.position = at + Vector3(sin(t + k) * 0.05, u * 0.9, 0)
+			puff.scale = Vector3.ONE * (0.6 + u * 1.6)
+			m.albedo_color.a = 0.32 * sin(PI * u))
+
+## Adds one piece to batch `key` of `parts`: a unit box or ball scaled to
+## `size`, turned by `turn`, at `at`.
+func _part(parts: Dictionary, key: String, size: Vector3, at: Vector3, turn := Basis.IDENTITY) -> void:
+	if not parts.has(key):
+		parts[key] = []
+	parts[key].append(Transform3D(turn * Basis.from_scale(size), at))
+
+
+## Draws every piece of one batch in a single go (a MultiMesh) in `parent`:
+## `mesh` (a unit box or ball) in `material`, once per transform.
+func _batch(parent: Node3D, mesh: Mesh, material: Material, transforms: Array) -> void:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = transforms.size()
+	for i in transforms.size():
+		mm.set_instance_transform(i, transforms[i])
+	var node := MultiMeshInstance3D.new()
+	node.multimesh = mm
+	node.material_override = material
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(node)
+
 func _pirate_sea() -> void:
 	sky = Color("#7a98ac")
 	ambient = Color("#b8c8d4")
@@ -215,7 +646,9 @@ func _pirate_sea() -> void:
 	sun_color = Color("#fff4e0")
 	sun_energy = 0.8
 	fog = 0.0015
-	drop = SEA_DROP  # close under the board: the ships' masts end just below the tiles
+	# Deep, so the big ship's masts end just below the tiles; close under the
+	# board where things on it stand in the water (islands, turtles).
+	drop = SEA_DROP if shallow else SHIP_DROP
 	var plane := PlaneMesh.new()
 	plane.size = Vector2.ONE * _reach * 9.0
 	plane.subdivide_width = 140
@@ -229,24 +662,32 @@ func _pirate_sea() -> void:
 	_sea.set_shader_parameter("wave_scale", wave_scale)
 	water.material_override = _sea
 	_add(water, _centre)
-	# Two ships either side of the board, broadside on, trading shots.
-	var left := _ship(Color("#e8e0cc"), Color("#151515"))
-	left.scale = Vector3.ONE * 2.0
-	_float(left, _centre + Vector3(-_half.x * 0.5, 0, 0.6), PI / 2 - 0.7)  # angled across the board
-	var right := _ship(Color("#d8cfb8"), Color("#8e2420"))
-	right.scale = Vector3.ONE * 2.0
-	_float(right, _centre + Vector3(_half.x * 0.5, 0, -0.6), -PI / 2 - 0.7)
-	_cannon_fire(left, right, 0.0, 7.0)
-	_cannon_fire(right, left, 3.6, 8.0)
-	# A third ship far off, sailing slowly across.
-	var far := _ship(Color("#cfc6b0"), Color("#151515"))
-	far.scale = Vector3.ONE * 1.6
-	_add(far, Vector3.ZERO)
-	var far_z := _centre.z - _half.y - 7.0
+	# One huge ship sailing diagonally across under the board, from the far
+	# left to the near right, then round again; as big as the drop lets it
+	# be with its pennant still under the tiles (stretched lengthwise too).
+	var size := clampf((drop - 1.4) / 2.1, 1.5, 4.5)
+	var ship := _ship(Color("#e8e0cc"), Color("#151515"))
+	ship.scale = Vector3(size * 1.2, size, size * 1.2)
+	_add(ship, _centre)
+	# Where islands or turtles stand in the water it crosses far behind the
+	# board instead, clear of them.
+	var course := Vector3(1, 0, 0) if shallow else Vector3(1, 0, 0.75).normalized()
+	var lane := _centre - Vector3(0, 0, _half.y + 6.0) if shallow else _centre
+	var reach := _reach * 2.2 + size * 3.0  # well off the screen at both ends
+	var port := Node3D.new()  # where its broadsides land, either side of it
+	var starboard := Node3D.new()
+	add_child(port)
+	add_child(starboard)
 	_anims.append(func(t: float):
-		var x := _centre.x - _reach * 2.5 + fmod(t * 0.25, _reach * 5.0)
-		far.position = Vector3(x, _wave_height(x, far_z) - 0.1, far_z)
-		far.rotation = Vector3(_tilt(x, far_z).x, 0, _tilt(x, far_z).y))
+		var at := lane + course * (fmod(t * 1.1 + reach * 0.55, reach * 2.0) - reach)  # in view soon after the start
+		var tilt := _tilt(at.x, at.z)
+		ship.position = Vector3(at.x, _wave_height(at.x, at.z) * 0.7 - 0.15 * size, at.z)
+		ship.rotation = Vector3(tilt.x, atan2(-course.z, course.x), tilt.y)
+		var side := course.cross(Vector3.UP) * size * 3.5
+		port.position = ship.position + side
+		starboard.position = ship.position - side)
+	_cannon_fire(ship, port, 0.0, 7.0)
+	_cannon_fire(ship, starboard, 3.6, 8.0)
 	if wave_scale == 0.0:  # the still lagoon: fish leaping now and then instead
 		_leaping_fish()
 	# Seagulls wheeling over the water, wings flapping, in wide lazy circles.
@@ -254,7 +695,7 @@ func _pirate_sea() -> void:
 		var gull := _seagull()
 		_add(gull, _centre)
 		var r := _rng.randf_range(_reach * 0.4, _reach * 1.2)
-		var height := _rng.randf_range(1.5, 3.6)  # under the board, over the masts
+		var height := _rng.randf_range(1.5, 3.6) * drop / SEA_DROP  # under the board
 		var speed := _rng.randf_range(0.15, 0.3) * (1 if i % 2 == 0 else -1)
 		var start := _rng.randf() * TAU
 		var wing_l: Node3D = gull.get_meta("left")
@@ -523,22 +964,27 @@ func _castle() -> void:
 	var stone := textured(Color("#77706a"), Color("#a29a8e"), 1.2)
 	var dark_stone := textured(Color("#5a544e"), Color("#7e766c"), 1.2)
 	_ground(textured(Color("#5e5440"), Color("#7e7258"), 3.0))  # packed earth inside the walls
+	frame_margin = 3.6  # room for the board once the view looks back (frame_back brings it closer)
+	frame_back = 3.0  # looking further back: more of the army, less empty courtyard in front
 	var hx := _half.x + 1.0
 	var hz := _half.y + 1.0
-	# The moat outside the walls.
+	var front := hz + 9.0  # the courtyard runs on past the bottom of the screen: no front wall or moat in view
+	# The moat outside the walls (behind and at the sides).
 	var water := textured(Color("#2a3e48"), Color("#456470"), 2.5, 0.0, 0.2)
 	_anims.append(func(t: float): water.uv1_offset = Vector3(t * 0.004, 0, 0))
-	for side in [[Vector3(0, 0, -hz - 2.2), Vector3(hx * 2 + 7.0, 0.06, 2.4)], [Vector3(0, 0, hz + 2.2), Vector3(hx * 2 + 7.0, 0.06, 2.4)],
-			[Vector3(-hx - 2.2, 0, 0), Vector3(2.4, 0.06, hz * 2 + 2.0)], [Vector3(hx + 2.2, 0, 0), Vector3(2.4, 0.06, hz * 2 + 2.0)]]:
+	var deep := hz + front
+	for side in [[Vector3(0, 0, -hz - 2.2), Vector3(hx * 2 + 7.0, 0.06, 2.4)],
+			[Vector3(-hx - 2.2, 0, (front - hz) / 2), Vector3(2.4, 0.06, deep + 2.0)],
+			[Vector3(hx + 2.2, 0, (front - hz) / 2), Vector3(2.4, 0.06, deep + 2.0)]]:
 		_add(_slab(side[1], water), _centre + side[0] - Vector3(0, 0.08, 0))
 	# Massive curtain walls with battlements: tall at the sides, low behind (so
-	# the army outside the gate shows over it) and in front (the board).
+	# the army outside the gate shows over it) and in front (out of view).
 	_wall(Vector3(-hx, 0, -hz), Vector3(hx, 0, -hz), BACK_WALL, 1.0, stone)
-	_wall(Vector3(-hx, 0, -hz), Vector3(-hx, 0, hz), 3.0, 1.0, stone)
-	_wall(Vector3(hx, 0, -hz), Vector3(hx, 0, hz), 3.0, 1.0, stone)
-	_wall(Vector3(-hx, 0, hz), Vector3(hx, 0, hz), 1.6, 0.9, stone)
+	_wall(Vector3(-hx, 0, -hz), Vector3(-hx, 0, front), 3.0, 1.0, stone)
+	_wall(Vector3(hx, 0, -hz), Vector3(hx, 0, front), 3.0, 1.0, stone)
+	_wall(Vector3(-hx, 0, front), Vector3(hx, 0, front), 1.6, 0.9, stone)
 	# Square towers at the corners.
-	for c in [Vector3(-hx, 0, -hz), Vector3(hx, 0, -hz), Vector3(-hx, 0, hz), Vector3(hx, 0, hz)]:
+	for c in [Vector3(-hx, 0, -hz), Vector3(hx, 0, -hz), Vector3(-hx, 0, front), Vector3(hx, 0, front)]:
 		_square_tower(_centre + c, 2.2, 4.5 if c.z < 0 else 2.2, dark_stone)
 	# The gatehouse in the back wall: round towers either side, a portcullis.
 	var gate := _centre + Vector3(0, 0, -hz)
@@ -600,8 +1046,8 @@ func _castle() -> void:
 	# Barrels, crates and haystacks about the courtyard.
 	var wood := textured(Color("#4a3420"), Color("#6e5034"), 0.4)
 	var hay := textured(Color("#a8883a"), Color("#d8b85a"), 0.3)
-	for i in 14:
-		var at := _centre + Vector3(_rng.randf_range(-hx + 1.0, hx - 1.0), 0, _rng.randf_range(-hz + 1.0, hz - 1.0))
+	for i in 24:
+		var at := _centre + Vector3(_rng.randf_range(-hx + 1.0, hx - 1.0), 0, _rng.randf_range(-hz + 1.0, hz + 5.0))  # into the courtyard in front too
 		match i % 3:
 			0:
 				var barrel := B._cyl(0.22, 0.22, 0.5, Color.WHITE)

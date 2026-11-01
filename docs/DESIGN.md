@@ -13,8 +13,15 @@ salary) are used freely; specific mechanics are not copied from any game.
 - The **Goal** (net worth) is picked on the home menu: 8,000, 10,000, 15,000
   (the default), 20,000 or 30,000 G. (Boards carry a goal of their own for the
   sim; the home menu's choice replaces it.)
-- A player whose net worth is at or above the Goal at the **start of their
-  turn** wins if they then reach the **Depot** during that turn (pass or land).
+- A player wins the moment they touch the **Depot** (pass or land) with net
+  worth at or above the Goal, counting a PAYDAY collected there, or having
+  been at it when their turn began. The move stops there and then: a route
+  being planned ends on the Depot without "Go here?", and the turn does not
+  carry on.
+- **Winning:** the camera closes in on the winner, who cheers under a bobbing
+  WINNER! banner while fireworks burst overhead and confetti rains down, to
+  the biggest whole-block fanfare; it keeps going behind the final standings
+  until New game.
 - While a player is in reach of the win (net worth at the Goal, or at it when
   their current turn began) their net worth on the stats glows and cycles
   through the rainbow, and the music switches to the intense loop until
@@ -33,13 +40,28 @@ salary) are used freely; specific mechanics are not copied from any game.
 ## Movement
 
 - Between turns the camera shows the whole board for 1.4 seconds, then
-  "X's turn!" pops up in the middle in their colour while the camera moves
-  in on them; they play 1.4 seconds later.
+  "X's turn!" (X: their character's name) pops up in the middle in their
+  colour while the camera moves in on them; they play 1.4 seconds later.
+- **Following camera.** On a flat board it always looks the same way. On a 3D
+  board where every space lies level (Cloud Hop) it turns with the
+  player, easing round to stay behind and above the way they last walked;
+  Lost Bottle, all on the glass, does the same. On a board with level ground
+  and walls (Sky Station) it keeps the board's own view on level ground and
+  eases round to face a wall square on (a little above) while the player is
+  on it: it turns only as they step on or off. Every price / rent sign on a
+  level tile turns round it by as much as the camera has turned from the
+  board's own view, all by the same angle, so it reads from any side (signs
+  on the bottle's glass stay as built; on Sky Station's wall they tip 45°
+  further out from it, to face the camera, and float (no post) out past the
+  house's roof, so the house never hides them).
 - Roll **2d4** (2–8), so movement is more predictable than one big die. The
   roll is a numbered dice block spinning over the player's head (its numbers
   flicking) through the turn menu; Roll makes them jump and punch it with one
   fist, and it flies at the screen, bounces round the bottom of it as if
-  just in front of the camera, and settles face on showing the roll. A Dice
+  just in front of the camera, and settles face on showing the roll. On
+  every board, however the camera is turned, the throw starts on screen at
+  the same size, and only real bounces tap (a slow one just rolls along the
+  bottom). A Dice
   space puts a fresh block over their head for the second roll. Landing on
   the Star sends a smiling star rising out of the player, growing slowly
   and twinkling, with a sparkle sound.
@@ -53,11 +75,20 @@ salary) are used freely; specific mechanics are not copied from any game.
 - Suits are collected live while planning (pip and popup); stepping back off
   a suit collected on this route takes it away again. Suits held before the
   move are kept.
-- Keyboard: the arrow keys (or d-pad) step in that direction on screen; the
-  arrow back the way you came, Backspace (or the pad's B) undo a step;
-  Enter or Space confirms "Go here?" (or takes the only way forward).
+- Keyboard and pad: an arrow key (or the d-pad) steps to the space lying
+  nearest that way **on screen as the camera shows it now** (within 75°), so
+  it follows a turned camera and diagonal links; two arrows held together
+  aim diagonally. The **left stick** aims at any angle: pushed well over it
+  takes one step, and must come back to the middle before the next. Aiming
+  back the way you came, Backspace (or the pad's B) undo a step (after a
+  warp, any arrow that points at no space goes back); Enter or Space confirms
+  "Go here?" (or takes the only way forward).
 - **The side panel** sits a little down from the top so its first line always
-  fits; each player's level shows by their name. **Hide log / Show log**
+  fits: the Goal and turn, then a row per player: a portrait of their
+  character (live 3D, head and shoulders) on their colour, with CPU across
+  the bottom for a computer player, then their level, suits, gold and net
+  worth, and under those their bonds. No names: the current player's row is
+  lit in their colour. **Hide log / Show log**
   (or L) folds the log away. Trades in the Bond Market go to the log as one
   line when the market closes (what was bought and sold, block by block, and
   the cash), not a line per trade. The market window keeps the same size
@@ -90,7 +121,9 @@ salary) are used freely; specific mechanics are not copied from any game.
   visited this lap gives you its **punch** (each Relay counts once per lap).
   **Landing** on a suit also opens the Scrap Heap: pick a Wildcard.
 - Passing or landing on the **Depot** with **all four suits** is a **PAYDAY**:
-  fireworks, and your salary, and your suits reset:
+  fireworks over the player (the camera stays close on them, just far enough
+  back to take in the banner and the bursts), and your salary, and your suits
+  reset:
 
   `salary = base_salary + 4 × relay_bonus + 5% of your total lot value`
 
@@ -160,24 +193,41 @@ Rent is multiplied by how much of the block the owner holds:
 (If "at least half" and "all but one" are the same count, the higher applies.)
 
 **Growing a block.** Whenever a player comes to hold two or more lots of a
-block (but not all of it), the camera moves in on the block for 3 seconds:
-their houses bounce up a little bigger one after another, each shows its value
-and rent, and the first shows the block's bond price (old → new).
+block (but not all of it), the camera moves in on the block for 3 seconds
+with the rest of the board dimmed (see Spotlight) and confetti falling over
+it: one after another their houses squash down, leap up stretched and
+spinning, land with a thump and a wobble and burst into sparks, staying a
+size up for a moment; each shows its value and rent, and the first shows the
+block's bond price (old → new).
+
+**Block shows** (growing and whole) wait for the next pause in play and run
+one at a time, with every panel over the board (a card, the market...) out
+of the way until they finish, so none is hidden or cut short. On a 3D board
+the camera looks at the block from its side of the board, along its up.
+
+**Spotlight.** Whenever a block is the focus, the light falls, every other
+space and everything on it darkens, and the block's lots glow under lights
+of their own: during the block shows, when a card acts on a whole block
+(Bond Bump and the other bond swings, free or cheap bonds, a block's value
+up, a rival's block shut), while hovering a choice when a card asks you to
+pick a block or a lot (the lot, or the block it would touch), and in View
+Map while hovering a block in the list (off the list, the whole board is lit).
 
 **Whole block.** Owning every lot in a block raises each lot's value by 25%
 (so its bond price jumps) and doubles how much each lot takes per turn. The
 moment a block comes into one player's hands (a purchase, buyout, auction,
 trade or card) the camera moves in on it and its buildings change one by
 one: each spins round and its roof pops back on in gold with a burst of sparks, under
-a WHOLE BLOCK! banner, to a rising fanfare (one note per building, then a
-held chord; the music dips under it). The gold roofs stay while the block is
-whole.
+a WHOLE BLOCK! banner and falling confetti, the rest of the board dimmed, to
+a rising fanfare (one note per building, then a held chord; the music dips
+under it). The gold roofs stay while the block is whole.
 
 **Characters.** After choosing a game on the home menu, each human player in
 turn picks a character on a stage where all of them stand turning, in that
 player's colour (`scripts/ui/character_select.gd`); ones already taken are
 dimmed. CPUs get random ones from those left (in Watch and the Test Lab
-everyone gets one at random). Eight placeholders for now, told apart by build,
+everyone gets one at random). Each player then goes by their character's
+name (Max, Lulu...) on the turn banner, prompts and log. Eight placeholders for now, told apart by build,
 skin and headwear (`Character.LOOKS`): Max (cap), Lulu (hair bow), Duke (top
 hat), Rosa (bobble hat), Tex (cowboy hat), Zip (cycle helmet), Chef Bo (chef's
 hat) and Gus (crown). The side panel shows each player's character by their
@@ -191,6 +241,15 @@ spaces (B the Bank, ? a Wildcard, M a minigame, a star, a moon, V a vacant
 plot, a built plot's initial, D Dice, $ the Market), the suits on
 the Relays, and a dot for each player (following a route as it is planned).
 It hides while View Map is open.
+
+**View Map** (button or M) shows the whole board and lists every block's
+lots in the side panel; hovering a block spotlights it (the rest of the
+board dark until the pointer leaves it) and clicking marks its lots with
+arrows. The camera is free while it is open: drag with the left mouse button
+to turn round the board and tilt, with the right or middle to slide it, and
+the wheel zooms; or WASD to slide, Q/E to turn, R/F to tilt and Z/X to zoom;
+on a pad the left stick slides, the right stick turns and tilts and the
+triggers zoom. A click that is not a drag still picks a space (Warp Gate).
 
 **On the board.** A lot's tile is a border in its block's colour round a
 panel: cream while for sale, the owner's colour once bought. On it stands a
@@ -252,7 +311,11 @@ Landing on a rival's lot, after paying rent you may **buy it out** for
   space any more.) Up to 20 bonds per action.
 - The **Bond Market** screen lists every block with its bond price, the change
   since the round began, the block's total value, each player's holdings and
-  what yours are worth; pick a block and an amount (1-20) to buy or sell.
+  what yours are worth; pick a block and an amount (1-20) to buy or sell. The
+  amount starts at 5, or at 1 when the market is open only for selling (Sell
+  bonds, or a debt). While paying off a debt, **Sell N to pay X G** sells
+  just enough of the chosen block's bonds to clear it (or all of them, if
+  that is not enough).
 - Whenever any bond price moves, the **Bond Ticker** appears over the board:
   moved prices spin like a slot-machine reel, then settle with the rise or fall.
 - **Dividends:** when rent is paid on any lot in a block, each bondholder of
@@ -272,12 +335,13 @@ Landing on a rival's lot, after paying rent you may **buy it out** for
 | Dice     | Roll again and keep moving (2 per board). |
 | Arcade   | Play a minigame (see Minigames). |
 | Star     | Interest (one per board, ★): until your next turn you get a **20% commission**, paid by the bank, on every profit the other players make: rent they collect, PAYDAY salaries, bond dividends, Scrap Heap combo bonuses, card gains and minigame prizes (not sales or trades). They keep all of theirs. Shows as "Star 20%" on the stats. |
-| Moon     | Take a break (one per board, ☾): all your lots are **closed** until your next turn, so they charge no rent. A brief sunset sweeps over the board (orange, then dusky purple, then back), and each of your lots shows a red "✕ CLOSED" sign until it reopens. Shows as "☾ closed" on the stats. |
+| Moon     | Take a break (one per board, ☾): all your lots are **closed** until your next turn, so they charge no rent. Night falls over the whole game view for 4 seconds (the turn waits): the picture fades into deep blue night (no red sunset), the sun all but goes out under a moonlit blue fill, stars come out and twinkle and every house's windows light up (the text over the board, the banner and the corner map stay clear); then dawn brings it all back. It sounds a soft vibraphone run falling away over a low string chord, then crickets (our own sound). Each of your lots shows a red "✕ CLOSED" sign until it reopens. Shows as "☾ closed" on the stats. |
 | Plot     | A building plot (three per board): build on it, then rivals pay and you get a perk (see Building plots). |
 | Workshop | Invest in any of your lots at 80% of the price. (Not on Sea Pirates now: its Workshop became a plot.) |
 | Toll     | Pay 8% of your cash to the bank. (Not on Sea Pirates now: its Toll became a plot.) |
 | Detour   | Warp to the paired Detour space; your move ends there. |
 | Junction | No effect; a branch point (any space may branch, this one is just empty). |
+| Switch   | A big yellow push button. Landing on it (not passing) presses it: its moving platform slides along its rails to its next place (the camera shows it, with a click, a rumble and a clank), changing which spaces it joins; anyone standing on the platform rides along. (Switch Yard.) |
 
 ## Wildcards and the Scrap Heap
 
@@ -475,22 +539,47 @@ and turn round at dead ends. Boards are JSON files (format in
 `boards/README.md`), so new boards need no code. All boards and art are
 original.
 
-**Turtle Islands** (`tools/make_3d_boards.pl`, over the Calm Sea: the Pirate Sea
-with still water, fish leaping out of it now and then instead of seagulls) is
-round throughout: a circle of 16 spaces on a round sandy beach island with the
-Bank and palms, and round it four big brown-shelled sea turtles, each carrying
-a circle of 8 spaces (its warp pad facing the beach), each shell wide enough to
-carry them cleanly; the island and turtles are faded a little towards the sea
-so the spaces stand out;
-swimming in the water, heads hidden under it and flippers paddling, their
-shells shaded in plates with grooves and growth rings, the spaces on top of
-their shells, each at its own height, joined only by warp pads; each turtle
-holds one suit, so a PAYDAY means hopping round them all. **Lost Bottle**
+**Cloud Hop** (`tools/make_3d_boards.pl`, Above the Clouds; it replaced
+Turtle Islands, same layout) is round throughout: a circle of 16 spaces with
+the Bank on top of a very tall round stone tower in the middle (a
+`sky_tower` prop: a carved stone top with a toothed rim, engraved rings and a
+star, the outer band the spaces stand on a darker stone, on a long column of
+stone courses with windows going down out of sight), and round it
+four big fluffy white clouds (`cloud` props), each carrying a circle of 8
+spaces (its warp pad facing the middle), each at its own height, joined only
+by warp pads. A cloud is a flattened pad just under its tiles with round
+puffs bulging from its edge and underneath, breathing gently in and out. Its
+corner map lays each circle out the way it runs on the board (not mirrored),
+the clouds evenly round the middle with their warp pads facing it. Each
+cloud holds one suit, so a PAYDAY means hopping round them all. **Lost Bottle**
 (same tool, in space) wraps the whole board round a giant glass bottle (just the glass, and no shadows on this board): two rings of spaces round the glass, joined by ladders up the
 front and back; spaces on the far side show through the glass. A space's
 `face` can be a direction (`[x, y, z]`, its top pointing outwards from the
 glass), and a board can set its own `camera` direction (the bottle is seen
 more from the side).
+
+**Switch Yard** (built by `tools/make_switch_board.pl`, in space) is a square
+ring with the Bank, and four suit pods outside it, two above and two below,
+each a 3 x 3 square of spaces round an empty middle. Each pair of pods shares
+a moving platform: a two-space bridge on a steel deck with hazard-yellow
+edges, sliding on rails between the ring and one pod or the other. Each
+bridge has three yellow switches: one on the ring (in the middle of its left
+side for the top bridge, its right side for the bottom one) and one in each
+of its two pods. Pressing one slides the bridge across, opening the way to
+the other pod and shutting the first; whoever it leaves behind goes round
+their pod until they land on its switch and call it back. On the corner map a switch is a ◉, and the platforms move
+with the board.
+
+**Drifting Isles** (built by `tools/make_drift_board.pl`, over the Calm Sea)
+is a square ring with the Bank and four islands, one off each side,
+each a loop of eight spaces with one suit, its own lots, a Wildcard and a
+switch. The islands start docked against the ring, each joined to the ring
+space beside it. Landing on a switch sends its island out to sea, cut off,
+anyone on it riding along; pressing it again sails it back in to dock.
+Each island's switch on the ring is on the far side from it, and the one on
+the island lets anyone stranded there call it home (until then they go round
+the island). Adrift, an island lies two spaces out from where it docks. The islands are moving platforms with `look: "island"`: no
+rails or deck: the spaces float over the water on their own.
 
 **Sky Station** is a 3D board (built by `tools/make_sky_station.pl`): a
 main deck with the Bank, a tower whose spaces climb straight up its face
@@ -510,12 +599,14 @@ the Escape menu's Board background can override it with any of them:
 
 | Theme | What is round and below the board |
 |-------|-----------------------------------|
-| Pirate Sea (Sea Pirates) | a deep blue-green rough sea with big rolling waves just under the board; two big pirate ships with rounded hulls and billowing sails, angled across the board among the tiles, trading cannon fire; seagulls wheeling overhead, a ship sailing far off, a shark fin circling, life rings, a blinking buoy, rocks and barrels |
-| Space (Spiral Market, for now; Sky Station) | twinkling stars, five planets circling slowly below on their own levels, small space rocks tumbling about, meteors streaking past |
+| Pirate Sea (Sea Pirates) | a deep blue-green rough sea with big rolling waves well under the board; one huge pirate ship with a rounded hull and billowing sails sailing diagonally across under the board (far left to near right, then round again), firing broadsides either side; seagulls wheeling overhead, a shark fin circling, life rings, a blinking buoy, rocks and barrels. On a board with islands or turtles standing in the water the sea lies closer under the board and the ship, smaller, crosses far behind it |
+| Space (Sky Station, Switch Yard) | twinkling stars, five planets circling slowly below on their own levels, small space rocks tumbling about, meteors streaking past |
 | Lava Dungeon (Lava Islands) | a sea of lava filling the whole view, glowing into a red haze at the horizon, stone pillars and rocky outcrops standing in it, drifting platforms, lava bubbles swelling and popping, embers; the rocks spread over the whole sea |
-| Grand Castle (Castle Fort) | a fortress: massive curtain walls with battlements, square towers with arrow slits, a gatehouse with a portcullis, the keep with a flag, a moat, banners, soldiers patrolling the walls, cannons firing now and then ; catapults flinging stones, barrels, crates and hay in the courtyard; a great army filling the ground outside the back gate, seen over the low back wall: hundreds of soldiers in four coloured companies with an aisle to the drawbridge, knights on horseback, standard bearers, siege cannons and tents; the banners hang still on the gatehouse |
+| Grand Castle (Castle Fort) | a fortress: massive curtain walls with battlements, square towers with arrow slits, a gatehouse with a portcullis, the keep with a flag, a moat, banners, soldiers patrolling the walls, cannons firing now and then ; catapults flinging stones, barrels, crates and hay in the courtyard; a great army filling the ground outside the back gate, seen over the low back wall: hundreds of soldiers in four coloured companies with an aisle to the drawbridge, knights on horseback, standard bearers, siege cannons and tents; the banners hang still on the gatehouse . The courtyard runs on past the bottom of the screen (no front wall or moat in view) and the whole-board view looks further back, so more of the army shows and the board sits low with little empty courtyard below it |
 | Slot-Car Grand Prix (Crossroads) | five slot-car tracks running right across the scene and off the screen at both ends, at three heights so they cross over one another: a main straight under the board with a start gantry, an S-bend in front, two flyovers front to back and a high flyover sweeping across in big S-curves; ten Formula One cars in team colours, each in its slot at its own speed |
 | Storm Clouds (Rainy Clouds) | a dark sky, storm clouds drifting slowly below, the weather turning from rain to hail to snow every 25 s, lightning flickering inside the clouds followed by thunder |
+| Night Market (Spiral Market) | one big, crowded night-market food alley below the board (built a little over twice life size, so it fills the view under the board), running at an angle across the view, under a deep blue-black sky and a dark haze. It fills the whole backdrop, off the screen every way: the alley runs on past both ends of the view (stalls, lights, covers and crowd all along), a low row of shopfronts lines the near side, and packed dark rooftops (water tanks, air conditioners, the odd lit window) fill the ground beyond both rows. It stands on a used street (so nothing floats): worn, damp dark tarmac with an uneven pattern, faintly lit by the stalls and wider than the alley so it shows round the stalls and shopfronts, kerbs along both sides where the stalls stand, the tarmac running on under everything, a few glossy puddles catching the stall lights, and litter underfoot (flattened cardboard, paper, cups). Food stalls of varied shapes and widths line both sides (steel carts with glowing counters, long tables with crates stacked by them, tall glowing glass display cases, stalls under round parasols, smoking grills under hoods), small dark awnings over some on the far side, steam rising off some; a few roof covers slope over short stretches of one side's stalls, leaving the street open; taller shopfronts along the far side carry neon signs, a few more hang out over the alley, and the near side stays low so the street shows; strings of small warm bulbs cross the alley every few stalls, each dipping in a slight C from the shopfronts to a pole on the near side, a red lantern at the bottom of the dip; a crowd wanders the alley. The board itself stays in soft moonlight. Repeated pieces are drawn in batches so it stays light |
+| Above the Clouds (Cloud Hop) | high in a bright blue sky: a hazy blue floor far below with a few white clouds drifting over it, small grassy rocks with little pines floating in the distance and bobbing, striped hot-air balloons drifting past, birds wheeling under the board |
 
 ## Test Lab
 
@@ -648,13 +739,13 @@ reverb. Everything is rendered once on worker threads and cached in
 
 | Loop | When | Sound |
 |------|------|-------|
-| Journey | normally | 80 bpm, D major: flute over harp, strings and plucked bass |
+| Journey | normally (**switched off for now**: home menu and normal play are quiet; `CALM_ON` in music.gd brings it back) | 80 bpm, D major: flute over harp, strings and plucked bass |
 | Final stretch | anyone in reach of the win | 126 bpm, A minor: brass, driving strings, cellos, timpani |
 | Casino | Scrap Slots, Pick a Card, Chance Wheel | 112 bpm swing, F: vibraphone, jazz piano chords, walking bass, brushes and ride |
 | Race | Critter Race | 152 bpm, D major gallop: brass and flute, racing strings, oom-pah pizzicato, snare |
 | Bonus | picking from the Scrap Heap | 138 bpm, G major: marimba, glockenspiel, pizzicato, claps |
 
-Stingers (the music dips under them): **PAYDAY** trumpets (three pickup
+Stingers (the music dips under them; they play on the Sound effects channel, so they are heard with the music off): **PAYDAY** trumpets (three pickup
 notes, a run up and a held chord with strings, timpani and cymbal) and the
 **whole-block** fanfare (a snare roll, a rising brass note per roof, a held
 chord). Effects (`scripts/ui/sfx.gd`): a soft, low note per space moved,

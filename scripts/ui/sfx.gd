@@ -15,6 +15,10 @@ extends Node
 ##               "takeover" an epic orchestral hit (buying out a rival's lot):
 ##               a drum roll swelling into two brass stabs and a held chord
 ##               "thunder" a crack and a long low rumble (Storm Clouds)
+##               "nightfall" the Moon: a soft vibraphone run falling away over a
+##               low string chord, then crickets in the dark
+##               "switch" a yellow button: a heavy click, then a platform
+##               rumbling across on its rails and a clank as it locks in place
 ## Game events carry the name in "sound" (GameState._sound). Clips are cached
 ## like the music.
 
@@ -27,7 +31,7 @@ const STEP_STYLE := "marimba"
 const STEP_NOTES := [60, 64]  # alternate steps
 const BACK_NOTE := 55
 const LEVEL_DB := {"step": -4.0, "back": -6.0, "bond_buy": -1.0, "bond_sell": -1.0, "build": 0.0,
-		"purchase": 0.0, "dice_hit": -9.0, "dice_bounce": -14.0, "dice_land": -9.0, "sparkle": -1.0, "takeover": 0.0, "thunder": -4.0}
+		"purchase": 0.0, "dice_hit": -9.0, "dice_bounce": -14.0, "dice_land": -9.0, "sparkle": -1.0, "takeover": 0.0, "thunder": -4.0, "nightfall": -2.0, "switch": -3.0}
 ## The register's "ching": a small, high, clangy strike that dies quickly
 ## (not a bell left ringing).
 const CHING := [[1.0, 1.0, 9.0], [1.47, 0.6, 12.0], [2.09, 0.55, 15.0], [2.76, 0.45, 20.0]]
@@ -60,6 +64,8 @@ func _ready() -> void:
 	_sounds.sparkle = Music.cached("sparkle", "", _sparkle, false)
 	_sounds.takeover = Music.cached("takeover", "", _takeover, false)
 	_sounds.thunder = Music.cached("thunder", "", _thunder, false)
+	_sounds.nightfall = Music.cached("nightfall", "", _nightfall, false)
+	_sounds.switch = Music.cached("switch", "", _switch, false)
 
 
 ## The sound for the `n`th space of a move (from 0).
@@ -319,5 +325,63 @@ static func _thunder() -> PackedFloat32Array:
 		var rumble := minf(1.0, t / 0.08) * exp(-t * 0.9) * (0.75 + 0.25 * sin(t * 5.3) * sin(t * 2.1))
 		buf[i] = lp2 * (rumble * 3.0) + lp * crack
 	Music._reverb(buf, 0.35)
+	Music._normalise(buf)
+	return buf
+
+
+## Night falls (the Moon): a vibraphone run drifting down over a low, hushed
+## string chord, then crickets chirping in the dark as it fades.
+static func _nightfall() -> PackedFloat32Array:
+	var buf := _samples(4.2)
+	var notes := [84, 79, 76, 72, 67, 64]
+	for i in notes.size():
+		Music._struck(buf, i * 0.16, notes[i], 0.5 - i * 0.04, Music.VIBES, 0.0, 5.0)
+	for n in [43, 50, 55, 58]:  # G minor, low and soft
+		Music._bowed(buf, 0.35, 2.2, n, 0.16, 0.8, 1.4, 900.0, 0.003)
+	# Crickets: short bursts of a high tone, pulsing fast, three to a chirp.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 61
+	var t := 1.5
+	while t < 3.9:
+		var pitch := rng.randf_range(4200.0, 4700.0)
+		for k in 3:
+			var start := int((t + k * 0.055) * Music.RATE)
+			var n := int(0.035 * Music.RATE)
+			for j in n:
+				if start + j >= buf.size():
+					break
+				var s := float(j) / Music.RATE
+				var env := sin(PI * float(j) / n) * 0.07 * (1.0 - (t - 1.5) / 3.0)
+				buf[start + j] += sin(TAU * pitch * s) * env
+		t += rng.randf_range(0.28, 0.5)
+	Music._reverb(buf, 0.4)
+	Music._normalise(buf)
+	return buf
+
+
+## A switch: the button's heavy click, then the platform rumbling across on
+## its rails (a low hum and a gritty slide, swelling and easing off) and a
+## clank as it locks in place.
+static func _switch() -> PackedFloat32Array:
+	var buf := _samples(2.4)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 71
+	Music._drum(buf, "woodblock", 0.0, 0.7, rng, 0)
+	Music._struck(buf, 0.0, 45, 0.5, Music.MARIMBA)
+	var lp := 0.0
+	var start := 0.3
+	var length := 1.6
+	for i in int(length * Music.RATE):
+		var t := float(i) / Music.RATE
+		var k := t / length
+		var swell := sin(PI * k)  # in and out with the slide
+		lp += 0.05 * (rng.randf_range(-1.0, 1.0) - lp)
+		var hum := sin(TAU * 55.0 * t) * 0.5 + sin(TAU * 110.0 * t) * 0.2
+		var j := int(start * Music.RATE) + i
+		if j < buf.size():
+			buf[j] += (lp * 1.6 + hum * 0.35) * swell * 0.5
+	Music._drum(buf, "snare", start + length - 0.05, 0.35, rng, 0)
+	Music._struck(buf, start + length - 0.05, 52, 0.45, Music.XYLO)
+	Music._reverb(buf, 0.2)
 	Music._normalise(buf)
 	return buf

@@ -14,6 +14,7 @@ const CPU_DELAY := 0.6
 const TURN_OVERVIEW := 1.4  # between turns: the whole board for this long,
 const TURN_ZOOM_IN := 1.4   # then "X's turn!" while the camera moves in on them
 const STAR_RISE := 1.8      # the star rising over someone landing on the Star
+const NIGHT_SECONDS := 4.0  # the Moon's nightfall: dusk, night, dawn
 const MAP_ALPHA := 0.8  # the corner map's opacity
 const BOND_LOT := 5  # bonds per market button press
 const PAYDAY_PAUSE := BoardView.PAYDAY_SECONDS  # the bond menu waits for the show
@@ -44,30 +45,37 @@ const SETUPS := [
 const GOALS := [8000, 10000, 15000, 20000, 30000]  # net worth goals offered on the home menu
 const BLOCK_SHOW := 2.8  # seconds the camera stays on a block just completed
 const BLOCK_FOCUS := 3.0  # seconds on a block someone now holds two or more lots of
+const AREA_SHOW := 3.0  # seconds the camera stays on a block a card acts on, the rest dimmed
 const MAX_BLOCK_LOTS := 5  # the Bond Market's lot table always has room for this many
 const MARKET_LOTS_WIDTH := 640
 const MARKET_LOT_CELL := 92  # a lot column's width in the Bond Market
+const PORTRAIT := Vector2(58, 58)  # a player's portrait on the stats panel
 const KIND_COLORS := {
 	"info": Color("#c8c8d0"), "gain": Color("#5be37a"), "loss": Color("#ff6464"),
 	"win": Color("#ffd84a"),
 	"card": Color("#f29bd0"),
 	"payday": Color("#ffd84a"),
 	"break": Color("#ffa060"),
+	"switch": Color("#ffc81a"),
 }
 
 var game := GameState.new()
 var board_view: BoardView
 var banner: Label
 var turn_label: Label  # "X's turn!" in the middle of the board
+var night_sky: NightSky  # the Moon: the whole view fades to night and back
+var _night_shown := false  # a nightfall played since the last _hold_for_shows()
+var _switch_shown := false  # a platform slid since the last _hold_for_shows()
 var log_button: Button
 var character_select: CharacterSelect
 var _log_hidden := false
 var _market_open := false  # bond trades in the market go to the log as one line when it closes
 var _held_in_block := {}  # "player|block" -> lots held, to spot a block growing
 var _bond_seen := {}  # block -> bond price at the last refresh
-var _focus_shown := false
+var _block_shows: Array[Dictionary] = []  # block shows waiting to play (_play_block_shows)
 var board_map: Minimap  # the board in the bottom-left corner, shown all through play
-var players_label: RichTextLabel
+var players_label: RichTextLabel  # the goal and turn, over the player rows
+var player_rows: VBoxContainer  # a row per player: portrait and numbers (_draw_players)
 var prompt_label: Label
 var buttons: GridContainer  # one column, or two for a long list (_ask)
 var log_box: RichTextLabel
@@ -86,7 +94,6 @@ var pause_panel: Control  # Escape: Keep playing / Main Menu / Quit
 var pause_menu_button: Button
 var _goal := 15000  # the net worth goal picked on the home menu (GOALS)
 var _last_whole := {}  # block id -> who owned all of it at the last _refresh() (-1: nobody)
-var _block_shown := false  # a whole-block show played since the last _hold_for_shows()
 var _payday_undo := {}  # while planning: state before the PAYDAY's Bond Market, to undo it
 var _payday_mark := 0  # events before this index have had their PAYDAY Bond Market
 var music: Music
@@ -100,7 +107,14 @@ var _map_open := false
 var _map_saved: Array[int] = []  # board highlight when the map was opened
 var _map_lit: Array[int] = []    # what the map itself last highlighted
 var _last_tiers := {}  # lot id -> renovation tier at the last _refresh()
-var _keys := {}  # while planning a route: "ui_up"/... or "back" -> value to choose
+const ARROWS := ["ui_up", "ui_down", "ui_left", "ui_right"]
+const ARROW_VECTORS := {"ui_up": Vector2.UP, "ui_down": Vector2.DOWN, "ui_left": Vector2.LEFT, "ui_right": Vector2.RIGHT}
+const STEP_CONE := 75.0  # degrees either side of an arrow (or the stick) a space may lie and still be picked
+var _keys := {}  # while planning a route: "ui_accept" or "back" -> value to choose
+var _step_to := {}  # while planning: space id -> value to choose for the arrow / stick pointing at it
+var _step_from := -1  # the space those directions are measured from
+var _no_step = null  # value for an arrow that points at nothing (after a warp: back), or null
+var _stick_ready := true  # the stick has come back to the middle since its last step
 var _planning := false     # a human is planning a route
 var _confirming := false   # playing a confirmed route through the rules
 var _route_suits: Array = []  # suits the current player would hold at the route's end
@@ -139,6 +153,7 @@ var _market_owing := false  # the market was opened to pay off a debt
 var _market_sell_only := false  # opened from the turn menu: selling only
 var _market_view_only := false  # View bonds: no buying or selling
 var market_done: Button
+var market_pay: Button  # owing: sell just enough of the shown block to pay the debt
 var trade_panel: Control  # the trade builder
 var trade_title: Label
 var trade_sides: Array[VBoxContainer] = []  # what you give, what you get
@@ -363,6 +378,8 @@ func _build_ui() -> void:
 	view_box.stretch = true
 	view_box.set_anchors_preset(Control.PRESET_FULL_RECT)
 	board_area.add_child(view_box)
+	night_sky = NightSky.new()  # the Moon's nightfall: over the board, under all the text
+	board_area.add_child(night_sky)
 	var viewport := SubViewport.new()
 	viewport.own_world_3d = true
 	viewport.msaa_3d = Viewport.MSAA_4X
@@ -449,6 +466,9 @@ func _build_ui() -> void:
 	players_label.bbcode_enabled = true
 	players_label.fit_content = true
 	col.add_child(players_label)
+	player_rows = VBoxContainer.new()
+	player_rows.add_theme_constant_override("separation", 4)
+	col.add_child(player_rows)
 
 	map_button = Button.new()
 	map_button.text = VIEW_MAP
@@ -546,6 +566,9 @@ func _start_menu() -> void:
 	board_map.visible = false
 	banner.text = ""
 	players_label.text = "[b]Scuffed Street[/b]"
+	for c in player_rows.get_children():
+		player_rows.remove_child(c)
+		c.queue_free()
 	log_box.clear()
 	var board := Board.load_file(_board_path)
 	var opts := []
@@ -654,6 +677,8 @@ func _new_game(cpu: Array, looks: Array = []) -> void:
 		looks.shuffle()
 	for p in game.players:
 		p.character = looks[p.index % looks.size()]
+		# Players go by their characters' names (the turn banner, the log...).
+		p.name = Character.LOOKS.get(p.character, {}).get("name", p.name)
 	game.board.goal = _goal
 	game.defer_debts = true  # humans pick which bonds to sell (_settle_debts)
 	board_view.build(game)
@@ -672,7 +697,9 @@ func _new_game(cpu: Array, looks: Array = []) -> void:
 	for block in game.board.blocks:
 		_last_bond[block] = game.bond_price(block)
 	_last_whole.clear()
+	_block_shows.clear()
 	_payday_mark = 0
+	_build_player_rows()  # this game's characters
 	_refresh()
 
 
@@ -860,6 +887,14 @@ func _run() -> void:
 		await _play_turn()
 		game.end_turn()
 	_refresh()
+	await _hold_for_shows()
+	if game.winner >= 0:  # fireworks and confetti over the winner, on until New game
+		_close_map()
+		overlays.visible = true
+		lot_panel.visible = false
+		board_view.highlight = []
+		board_view.victory(game.winner)
+		music.fanfare(Music.FANFARE_MAX)
 	await _ask(null, _final_standings(), [["New game", true]])
 	_start_menu()
 
@@ -992,6 +1027,7 @@ func _trade(p: PlayerState) -> void:
 	if yes:
 		game.trade(p, q, offer.give_lots, offer.give_g, offer.get_lots, offer.get_g)
 		_refresh()
+		await _hold_for_shows()  # a block changing hands shows now, not after the OK
 		await _settle_debts()  # G past someone's cash is paid by selling bonds
 	else:
 		game._note("%s turns down %s's trade" % [q.name, p.name], "info", q.index)
@@ -1089,13 +1125,29 @@ func _plan_route(p: PlayerState) -> void:
 		board_map.preview[p.index] = here
 		board_map.queue_redraw()
 		_show_space_info(here)
+		# Touching the Bank at the goal (its PAYDAY counted) wins on the spot:
+		# the route ends here, with no "Go here?" and no walking on.
+		if not path.is_empty() and here == game.board.depot \
+				and _at_goal(p, _route_outcome(p, path).payday):
+			await _update_route_suits(p, path, true)
+			break
 		await _update_route_suits(p, path, path.size() == total)
+		var can_undo := not path.is_empty()
+		_step_from = here
 		if path.size() == total:
 			board_view.highlight = []
 			board_view.sync()
-			_keys = {"ui_accept": true, "back": false, _dir(here, prev): false}
-			var go: bool = await _ask(p, "Go here? (%s)" % _space_title(here),
-					[["Go here", true], ["Back", false]])
+			_keys = {"ui_accept": true}
+			_step_to = {}
+			_no_step = null
+			var answers := [["Go here", true]]
+			if can_undo:
+				answers.append(["Back", false])
+				_keys["back"] = false
+				_step_to[prev] = false
+				if _warped(here, prev):  # came by warp: every arrow goes back
+					_no_step = false
+			var go: bool = await _ask(p, "Go here? (%s)" % _space_title(here), answers)
 			if go:
 				break
 			path.pop_back()
@@ -1107,14 +1159,20 @@ func _plan_route(p: PlayerState) -> void:
 		var choices := []
 		for o in opts:
 			choices.append(["Step to %s" % _space_title(o), o])
-		if not path.is_empty():
-			choices.append(["Back", -1])
 		_keys = {}
-		if not path.is_empty():
-			_keys[_dir(here, prev)] = -1
+		_step_to = {}
+		_no_step = null
+		if can_undo:
+			choices.append(["Back", -1])
 			_keys["back"] = -1
+			if _warped(here, prev):
+				# Came by warp, so "the way you came" has no direction on screen:
+				# any arrow with no space that way goes back instead.
+				_no_step = -1
+			else:
+				_step_to[prev] = -1
 		for o in opts:
-			_keys[_dir(here, o)] = o
+			_step_to[o] = o  # at a dead end the way back is the way on
 		if opts.size() == 1:
 			_keys["ui_accept"] = opts[0]
 		var pick: int = await _ask(p, "%d of %d moves left." % [total - path.size(), total], choices)
@@ -1125,6 +1183,8 @@ func _plan_route(p: PlayerState) -> void:
 			path.append(pick)
 			sfx.step(path.size() - 1)
 	_keys = {}
+	_step_to = {}
+	_no_step = null
 	board_view.highlight = []
 	board_view.zoom_for_highlight = true
 	board_view.clear_preview(p.index)
@@ -1150,20 +1210,10 @@ func _plan_route(p: PlayerState) -> void:
 ## way opens the Bond Market there and then (`at_end`: the route ends here, so
 ## landing will open it instead); backing off the Depot undoes those trades.
 func _update_route_suits(p: PlayerState, path: Array[int], at_end := false) -> void:
-	var suits: Array = p.punches.duplicate()
-	var any := p.any_suits
-	var four := game.board.relay_ids().size()
-	var payday := 0
-	for id in path:
-		var s := game.space(id)
-		if s.type == "relay" and id not in suits:
-			suits.append(id)
-		elif s.type == "depot" and suits.size() + any >= four:
-			any -= maxi(0, four - suits.size())  # only the cards filling a gap
-			suits.clear()
-			if payday == 0:
-				payday = game.payday_amount(p)
-	_route_any = any
+	var outcome := _route_outcome(p, path)
+	var suits: Array = outcome.suits
+	var payday: int = outcome.payday
+	_route_any = outcome.any
 	# PAYDAY as the Depot is passed, taken back if the route backs off it.
 	if payday > 0 and _route_payday == 0:
 		board_view.payday(p.index, payday)
@@ -1189,14 +1239,51 @@ func _update_route_suits(p: PlayerState, path: Array[int], at_end := false) -> v
 	_route_suits = suits
 	_refresh()
 
-## Which arrow (as a ui_* action) points from space `a` to space `b` on screen;
-## the camera always looks the same way, so board up is screen up.
-func _dir(a: int, b: int) -> String:
-	var dx: float = game.space(b).x - game.space(a).x
-	var dy: float = game.space(b).y - game.space(a).y
-	if absf(dx) >= absf(dy):
-		return "ui_right" if dx > 0 else "ui_left"
-	return "ui_down" if dy > 0 else "ui_up"
+## What walking `path` would leave p with, by the rules: {"suits": the Relays
+## held, "any": Any Suit cards, "payday": the PAYDAY collected on the way (0:
+## none)}. Each new suit is collected, and passing the Depot with all of them
+## is a PAYDAY that resets them.
+func _route_outcome(p: PlayerState, path: Array[int]) -> Dictionary:
+	var suits: Array = p.punches.duplicate()
+	var any := p.any_suits
+	var four := game.board.relay_ids().size()
+	var payday := 0
+	for id in path:
+		var s := game.space(id)
+		if s.type == "relay" and id not in suits:
+			suits.append(id)
+		elif s.type == "depot" and suits.size() + any >= four:
+			any -= maxi(0, four - suits.size())  # only the cards filling a gap
+			suits.clear()
+			if payday == 0:
+				payday = game.payday_amount(p)
+	return {"suits": suits, "any": any, "payday": payday}
+
+
+## Whether stepping between `a` and `b` is a hop between two warp pads.
+func _warped(a: int, b: int) -> bool:
+	return game.space(a).type == "warp" and game.space(b).type == "warp"
+
+
+## While planning a route: the value of the step whose space lies nearest
+## direction `want` on screen as the camera shows it now (so it works however
+## the camera has turned, and for diagonals), within STEP_CONE of it; else
+## _no_step (null: nothing to do).
+func _step_toward(want: Vector2):
+	if want.length() < 0.01 or _step_to.is_empty():
+		return _no_step
+	var from := board_view.screen_pos(_step_from)
+	var best = _no_step
+	var best_angle := deg_to_rad(STEP_CONE)
+	for id in _step_to:
+		var way := board_view.screen_pos(id) - from
+		if not way.is_finite() or way.length() < 1.0:
+			continue
+		var angle := absf(want.angle_to(way))
+		if angle < best_angle:
+			best_angle = angle
+			best = _step_to[id]
+	return best
 
 
 ## While paused, keys other than Escape do nothing (not even a minigame's Enter).
@@ -1205,9 +1292,11 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## Escape opens (or closes) the pause box. M opens the map. Arrow keys (or
-## d-pad) step while planning a route; the arrow back the way you came,
-## Backspace or the pad's B undo a step; Enter confirms "Go here?".
+## Escape opens (or closes) the pause box. M opens the map. While planning a
+## route an arrow key (or the d-pad, or the left stick: _stick_step) steps to
+## the space lying nearest that way on screen (_step_toward); aiming back the
+## way you came (after a warp, at no space at all), Backspace or the pad's B
+## undo a step; Enter confirms "Go here?".
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L \
 			and not pause_panel.visible:
@@ -1225,18 +1314,49 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		_toggle_map()
 		return
-	if _keys.is_empty() or (_map_open and slot_panel.visible):
+	if (_keys.is_empty() and _step_to.is_empty() and _no_step == null) or (_map_open and slot_panel.visible):
 		return  # no stopping the Bond reel while the map hides it
+	if event is InputEventJoypadMotion:
+		_stick_step(event.device)
+		return
 	var key := ""
-	for action in ["ui_up", "ui_down", "ui_left", "ui_right", "ui_accept"]:
+	for action in ARROWS + ["ui_accept"]:
 		if event.is_action_pressed(action):
 			key = action
 	if event.is_action_pressed("ui_cancel") or (event is InputEventKey and event.pressed
 			and not event.echo and event.keycode == KEY_BACKSPACE):
 		key = "back"
+	if key in ARROWS:
+		# This arrow plus any other held with it, so two at once is a diagonal.
+		var want: Vector2 = ARROW_VECTORS[key]
+		for arrow in ARROWS:
+			if arrow != key and Input.is_action_pressed(arrow):
+				want += ARROW_VECTORS[arrow]
+		var value = _step_toward(want)
+		if value != null:
+			get_viewport().set_input_as_handled()
+			chosen.emit(value)
+		return
 	if key != "" and _keys.has(key):
 		get_viewport().set_input_as_handled()
 		chosen.emit(_keys[key])
+
+
+## The left stick while planning a route: pushed well over, it steps to the
+## space lying nearest that way on screen (any angle, not just four ways),
+## once; it must come back to the middle before the next step.
+func _stick_step(device: int) -> void:
+	var stick := Vector2(Input.get_joy_axis(device, JOY_AXIS_LEFT_X), Input.get_joy_axis(device, JOY_AXIS_LEFT_Y))
+	if stick.length() < 0.3:
+		_stick_ready = true
+		return
+	if not _stick_ready or stick.length() < 0.7:
+		return
+	_stick_ready = false
+	var value = _step_toward(stick)
+	if value != null:
+		get_viewport().set_input_as_handled()
+		chosen.emit(value)
 
 ## A short name for a space on buttons: the lot's name, the suit, or the type.
 func _space_title(id: int) -> String:
@@ -1342,6 +1462,8 @@ func _payday_since_mark(p: PlayerState) -> bool:
 ## restore if the route backs off the Depot (_undo_payday_market).
 func _payday_market(p: PlayerState, pay: int) -> void:
 	_keys = {}
+	_step_to = {}
+	_no_step = null
 	_payday_undo = {"cash": p.cash, "bonds": p.bonds.duplicate(),
 			"pressure": game.bond_pressure.duplicate()}
 	p.cash += pay
@@ -1606,9 +1728,20 @@ func _wildcard(p: PlayerState) -> void:
 	var pick = null
 	if c.pick != "none":
 		pick = await _card_choice(p, id)
+	# A card that acts on a whole block: the camera goes to it and the rest
+	# of the board darkens while the change shows.
+	var area: Array[int] = []
+	if c.get("fx", "") in ["bond_swing", "free_bonds", "bond_discount", "boost_block", "blackout_block"]:
+		area = _card_area(c, pick)
+	if not area.is_empty():
+		board_view.focus_on(area, AREA_SHOW)
+		board_view.spotlight(area)
 	var result := Wildcards.apply(game, p, id, pick)
 	_refresh()
 	await _hold_for_shows()
+	if not area.is_empty():
+		await _wait(AREA_SHOW - TICKER_SPIN)
+		board_view.clear_spotlight()
 	await _settle_debts()
 	if game.game_over:
 		return
@@ -1802,9 +1935,32 @@ func _card_choice(p: PlayerState, id: int):
 		choices.append(["Don't swap", null])
 	board_view.highlight = lots_shown
 	board_view.sync()
+	# Hovering a choice spotlights what it would touch: the block, or the lot.
+	_ask_hover = func(o): board_view.spotlight(_card_area(c, o))
 	var pick = await _ask(p, "%s: choose." % c.name, choices, Wildcards.cpu_pick(game, p, id))
+	_ask_hover = Callable()
+	board_view.clear_spotlight()
 	board_view.highlight = []
 	return pick
+
+
+## The spaces card `c` touches with choice `pick`: a whole block for a block
+## card (its lots, or for a lot card that acts on a block, the lots there with
+## the same owner), the lot or lots for a lot card; [] for anything else.
+func _card_area(c: Dictionary, pick) -> Array[int]:
+	var area: Array[int] = []
+	if pick is String and game.board.blocks.has(pick):
+		area = game.board.lots_in_block(pick)
+	elif pick is Array:  # a swap: both lots
+		area.assign(pick)
+	elif pick is int and game.lots.has(pick):
+		if c.get("fx", "") in ["boost_block", "blackout_block"]:
+			for lot in game.board.lots_in_block(game.space(pick).block):
+				if game.lots[lot].owner == game.lots[pick].owner:
+					area.append(lot)
+		else:
+			area.append(pick)
+	return area
 
 
 ## Warp Gate: p picks any space but their own by clicking it on the board
@@ -1836,14 +1992,17 @@ func _toggle_map() -> void:
 	props_scroll.visible = _map_open
 	log_box.visible = not _map_open and not _log_hidden
 	board_view.hold_overview = _map_open
+	board_view.set_free_cam(_map_open)
 	board_map.visible = not _map_open
 	overlays.visible = not _map_open
 	if _map_open:
 		_map_saved = board_view.highlight
 		_map_lit = board_view.highlight
 		_fill_props()
-	elif board_view.highlight == _map_lit:
-		board_view.highlight = _map_saved  # nothing else has changed it meanwhile
+	else:
+		board_view.clear_spotlight()
+		if board_view.highlight == _map_lit:
+			board_view.highlight = _map_saved  # nothing else has changed it meanwhile
 	board_view.sync()
 
 
@@ -1854,6 +2013,7 @@ func _close_map() -> void:
 
 func _fill_props() -> void:
 	var p := game.current_player()
+	board_view.clear_spotlight()  # the list is rebuilt: no row is hovered any more
 	for c in props_box.get_children():
 		c.queue_free()
 	for block in game.board.blocks:
@@ -1870,6 +2030,10 @@ func _fill_props() -> void:
 			_map_lit = lots
 			board_view.highlight = lots
 			board_view.sync())
+		# Only while hovering a block is it spotlit (the rest of the board
+		# dark); otherwise the whole board is lit for the free camera.
+		head.mouse_entered.connect(func(): board_view.spotlight(lots))
+		head.mouse_exited.connect(board_view.clear_spotlight)
 		props_box.add_child(head)
 		for lot in lots:
 			var l: Dictionary = game.lots[lot]
@@ -1908,7 +2072,7 @@ func _market(p: PlayerState, prompt: String, owing := false, sell_only := false,
 		_market_block = game.board.blocks.keys()[0]
 	if owing and p.bonds_in(_market_block) == 0:
 		_market_block = p.bonds.keys()[0]
-	_market_qty = BOND_LOT
+	_market_qty = 1 if owing or sell_only else BOND_LOT  # selling starts at one bond
 	_market_owing = owing
 	_market_sell_only = sell_only
 	_market_view_only = view_only
@@ -1930,6 +2094,8 @@ func _market(p: PlayerState, prompt: String, owing := false, sell_only := false,
 				game.buy_bonds(p, _market_block, _market_qty)
 			"sell":
 				game.sell_bonds(p, _market_block, mini(_market_qty, p.bonds_in(_market_block)))
+			"pay_debt":  # just enough of this block's bonds to clear the debt
+				game.sell_bonds(p, _market_block, _debt_bonds(p))
 			"done":
 				if not market_done.disabled:
 					break
@@ -2289,6 +2455,9 @@ func _build_market(parent: Control) -> void:
 	market_sell = _market_button("Sell", ["sell"])
 	market_sell.custom_minimum_size = Vector2(130, 0)
 	trade.add_child(market_sell)
+	market_pay = _market_button("Sell to pay", ["pay_debt"])
+	market_pay.tooltip_text = "Sell just enough of this block's bonds to pay what you owe"
+	trade.add_child(market_pay)
 	market_done = _market_button("Done", ["done"])
 	trade.add_child(market_done)
 
@@ -2563,6 +2732,15 @@ func _fill_market(p: PlayerState) -> void:
 			or p.cash < price * _market_qty
 	market_sell.text = "Sell %d for %d G" % [sell_n, price * sell_n] if held > 0 else "Sell"
 	market_sell.disabled = held == 0 or _market_view_only
+	market_pay.visible = _market_owing and p.cash < 0
+	var need := _debt_bonds(p)
+	market_pay.disabled = need == 0
+	if need == 0:
+		market_pay.text = "Sell to pay"
+	elif need * price >= -p.cash:
+		market_pay.text = "Sell %d to pay %d G" % [need, -p.cash]
+	else:  # not enough here: all of them, and the rest from another block
+		market_pay.text = "Sell all %d (%d G)" % [need, need * price]
 	market_done.disabled = _market_owing and p.cash < 0 and not p.bonds.is_empty()
 	if _market_owing:
 		if p.cash < 0:
@@ -2573,6 +2751,15 @@ func _fill_market(p: PlayerState) -> void:
 		else:
 			market_title.text = "Debt paid — %s  (cash %d G)" % [p.name, p.cash]
 			prompt_label.text = "Debt paid. Press Done to carry on."
+
+
+## How many of the shown block's bonds p must sell to clear their debt (all
+## they hold there if that is not enough; 0 if they owe nothing).
+func _debt_bonds(p: PlayerState) -> int:
+	if p.cash >= 0:
+		return 0
+	var price := game.bond_price(_market_block)
+	return mini(p.bonds_in(_market_block), ceili(-p.cash / float(price)))
 
 
 func _cell(text: String, color: Color, size := 16) -> Label:
@@ -2625,9 +2812,7 @@ func _check_whole_blocks() -> void:
 			game._note("%s owns all of Block %s! Its lots are worth %d%% more and take twice the investment" % [
 					game.players[owner].name, game.board.blocks[block].name,
 					roundi((GameState.WHOLE_BLOCK_VALUE - 1.0) * 100)], "own", owner)
-			board_view.whole_block(game.board.lots_in_block(block), BLOCK_SHOW)
-			music.fanfare(game.board.lots_in_block(block).size())
-			_block_shown = true
+			_block_shows.append({"whole": true, "ids": game.board.lots_in_block(block)})
 		_last_whole[block] = owner
 	_check_block_growth()
 
@@ -2654,23 +2839,42 @@ func _check_block_growth() -> void:
 				var bond: int = game.bond_price(block)
 				var old: int = _bond_seen.get(block, bond)
 				labels[owned[0]] = "Bonds %s%d G\n%s" % ["%d → " % old if old != bond else "", bond, labels[owned[0]]]
-				board_view.block_focus(ids, owned, labels, BLOCK_FOCUS)
-				sfx.play("build")
-				_focus_shown = true
+				_block_shows.append({"whole": false, "ids": ids, "owned": owned, "labels": labels})
 		_bond_seen[block] = game.bond_price(block)
 
 
-## Lets a PAYDAY celebration or a bond ticker spin play out before moving on.
+## Plays the block shows _check_whole_blocks queued, one at a time, each with
+## the panels over the board out of the way so nothing covers it: the
+## whole-block fanfare (gold roofs) or a growing block's bouncing houses.
+func _play_block_shows() -> void:
+	while not _block_shows.is_empty() and game.board != null:
+		var show: Dictionary = _block_shows.pop_front()
+		var hid := overlays.visible
+		overlays.visible = false
+		var seconds := BLOCK_SHOW if show.whole else BLOCK_FOCUS
+		if show.whole:
+			board_view.whole_block(show.ids, BLOCK_SHOW)
+			music.fanfare(show.ids.size())
+		else:
+			board_view.block_focus(show.ids, show.owned, show.labels, BLOCK_FOCUS)
+		sfx.play("build")
+		await _wait(seconds)
+		overlays.visible = hid and not _map_open
+
+
+## Lets a PAYDAY celebration, a block show or a bond ticker spin play out
+## before moving on.
 func _hold_for_shows() -> void:
+	await _play_block_shows()
 	var seconds := 0.0
 	if _payday_shown:
 		seconds = PAYDAY_PAUSE
-	if _focus_shown:
-		seconds = maxf(seconds, BLOCK_FOCUS)
-	_focus_shown = false
-	if _block_shown:
-		seconds = maxf(seconds, BLOCK_SHOW)
-	_block_shown = false
+	if _night_shown:
+		seconds = maxf(seconds, NIGHT_SECONDS)
+	_night_shown = false
+	if _switch_shown:
+		seconds = maxf(seconds, BoardView.PLATFORM_SLIDE + 0.8)
+	_switch_shown = false
 	if _ticker_shown:
 		seconds = maxf(seconds, TICKER_SPIN + 0.7)
 	_payday_shown = false
@@ -2775,15 +2979,24 @@ func _wait(seconds: float) -> void:
 	await get_tree().create_timer(seconds).timeout
 
 
-## The player stats panel; while the ticker is up each bondholder's line also
-## shows what the price move made or cost them.
+## The player stats panel: the goal and turn, then a row per player: their
+## character's portrait in their colour (CPU written over a computer's), then
+## level, suits, gold and net worth, and under those their bonds. The current
+## player's row is lit in their colour. While the ticker is up each
+## bondholder's row also shows what the price move made or cost them.
 func _draw_players() -> void:
-	var lines := PackedStringArray()
-	lines.append("[b]Goal %d G[/b]   Turn %d" % [game.board.goal, game.turn])
+	players_label.text = "[b]Goal %d G[/b]   Turn %d" % [game.board.goal, game.turn]
+	if player_rows.get_child_count() != game.players.size():
+		_build_player_rows()
 	var anyone_at_goal := false
 	for p in game.players:
-		var col: String = BoardView.PLAYER_COLORS[p.index].to_html(false)
-		var mark := "> " if p.index == game.current else "   "
+		var row: PanelContainer = player_rows.get_child(p.index)
+		var box := row.get_theme_stylebox("panel") as StyleBoxFlat
+		var colour: Color = BoardView.PLAYER_COLORS[p.index]
+		box.bg_color = colour.darkened(0.55) if p.index == game.current else Color("#25252b")
+		box.border_color = colour if p.index == game.current else Color("#3a3a44")
+		row.modulate.a = 0.45 if p.broke else 1.0
+		var stats: RichTextLabel = row.get_meta("stats")
 		var bonds := 0
 		for b in p.bonds:
 			bonds += p.bonds[b]
@@ -2814,12 +3027,86 @@ func _draw_players() -> void:
 		if _at_goal(p, pending):  # in reach of the win: a glowing rainbow
 			anyone_at_goal = true
 			net = "[outline_size=8][outline_color=#ffffff66][pulse freq=1.6 color=#ffffffb0 ease=-2.0][rainbow freq=0.6 sat=0.75 val=1.0 speed=1.2][b]★ %s ★[/b][/rainbow][/pulse][/outline_color][/outline_size]" % net
-		lines.append("%s[color=#%s]■[/color] [b]%s[/b] [color=#9a9aa6]%s[/color] [color=#ffd84a][b]Lv %d[/b][/color] %s  %s  %s%s" % [
-				mark, col, p.name, Character.LOOKS.get(p.character, {}).get("name", ""), p.level, pips, cash, net, "  BROKE" if p.broke else ""])
-		lines.append("      [color=#9a9aa6]bonds %d   bonds value %d G[/color]%s" % [
-				bonds, game.bond_worth(p), change])
-	players_label.text = "\n".join(lines)
+		stats.text = "[font_size=17][color=#ffd84a][b]Lv %d[/b][/color]  %s  [b]%s[/b]  %s%s[/font_size]\n[color=#9a9aa6]bonds %d   bonds value %d G[/color]%s" % [
+				p.level, pips, cash, net, "  [color=#ff5a5a][b]BROKE[/b][/color]" if p.broke else "",
+				bonds, game.bond_worth(p), change]
 	music.intense = anyone_at_goal and not game.game_over
+
+
+## One row per player for the stats panel: a portrait (the player's character,
+## live in 3D, head and shoulders, on their colour, with CPU written over it
+## for a computer player) and a text box for the numbers (_draw_players).
+func _build_player_rows() -> void:
+	for c in player_rows.get_children():
+		player_rows.remove_child(c)
+		c.queue_free()
+	for p in game.players:
+		var colour: Color = BoardView.PLAYER_COLORS[p.index]
+		var row := PanelContainer.new()
+		var box := StyleBoxFlat.new()
+		box.set_corner_radius_all(8)
+		box.set_border_width_all(2)
+		box.set_content_margin_all(4)
+		row.add_theme_stylebox_override("panel", box)
+		player_rows.add_child(row)
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 8)
+		row.add_child(line)
+		var frame := PanelContainer.new()  # the portrait on the player's colour
+		var back := StyleBoxFlat.new()
+		back.bg_color = colour.darkened(0.2)
+		back.set_corner_radius_all(6)
+		frame.add_theme_stylebox_override("panel", back)
+		frame.custom_minimum_size = PORTRAIT
+		line.add_child(frame)
+		var view := SubViewportContainer.new()
+		view.stretch = true
+		view.custom_minimum_size = PORTRAIT
+		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		frame.add_child(view)
+		var vp := SubViewport.new()
+		vp.own_world_3d = true
+		vp.transparent_bg = true
+		vp.msaa_3d = Viewport.MSAA_4X
+		vp.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+		view.add_child(vp)
+		var light := DirectionalLight3D.new()
+		light.rotation_degrees = Vector3(-30, 25, 0)
+		vp.add_child(light)
+		var env := Environment.new()
+		env.background_mode = Environment.BG_CLEAR_COLOR
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_color = Color("#fff0d8")
+		env.ambient_light_energy = 0.6
+		var world := WorldEnvironment.new()
+		world.environment = env
+		vp.add_child(world)
+		var fig := Character.new()
+		vp.add_child(fig)
+		fig.setup(colour, p.character)
+		var cam := Camera3D.new()
+		cam.fov = 30
+		vp.add_child(cam)
+		cam.position = Vector3(0, 0.44, 0.8)
+		cam.look_at(Vector3(0, 0.38, 0), Vector3.UP)
+		if p.is_cpu:
+			var tag := Label.new()
+			tag.text = "CPU"
+			tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			tag.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM  # over the body, clear of the face
+			tag.add_theme_font_size_override("font_size", 15)
+			tag.add_theme_constant_override("outline_size", 6)
+			tag.add_theme_color_override("font_outline_color", Color.BLACK)
+			tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			frame.add_child(tag)
+		var stats := RichTextLabel.new()
+		stats.bbcode_enabled = true
+		stats.fit_content = true
+		stats.scroll_active = false
+		stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		stats.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		line.add_child(stats)
+		row.set_meta("stats", stats)
 
 
 ## Whether p wins on reaching the Depot: at the goal now (they will be at the
@@ -2852,9 +3139,15 @@ func _refresh() -> void:
 		if e.kind != "info":
 			banner.text = e.text
 			banner.add_theme_color_override("font_color", color)
-		if e.kind == "break":  # the Moon: a sunset, then the closed signs show
-			board_view.sunset()
-			_ticker_shown = true  # hold the turn while it plays
+		if e.kind == "switch":  # a platform slides across (the board already moved it)
+			board_view.move_platform(e.space, e.platform)
+			sfx.play("switch")
+			_switch_shown = true
+		if e.kind == "break":  # the Moon: night falls over everything, then the closed signs show
+			night_sky.play(NIGHT_SECONDS)
+			board_view.nightfall(NIGHT_SECONDS)
+			sfx.play("nightfall")
+			_night_shown = true  # hold the turn while it plays
 		if e.kind == "payday":
 			_last_cash[e.player] = game.players[e.player].cash  # the banner shows it
 			if not (_confirming and _route_payday > 0):  # not again if planning showed it

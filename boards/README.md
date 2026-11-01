@@ -9,9 +9,10 @@ One JSON file per board. Top-level fields:
 | `start_cash`  | int    | Each player's starting Scrap. |
 | `base_salary` | int    | Salary for passing the Depot. |
 | `relay_bonus` | int    | Extra salary per Relay punched this lap. |
-| `theme` | string | The backdrop round the board: `sea` (default), `space`, `volcano`, `castle`, `racing` or `storm`. |
-| `props` | array | Optional, for 3D boards: things the board stands on, each `{kind: "island" or "tower", at: [x, y, z], size: [w, d] (island) or [w, h, d] (tower), depth}` in tiles. |
+| `theme` | string | The backdrop round the board: `sea` (default), `lagoon`, `space`, `volcano`, `castle`, `racing`, `storm`, `market` or `sky`. |
+| `props` | array | Optional, for 3D boards: things the board stands on, each `{kind: "island", "tower", "isle", "turtle", "bottle" or "cloud", at: [x, y, z], size: [w, d] (island) or [w, h, d] (tower), radius (cloud: a fluffy cloud under the spaces at that height; sky_tower: a very tall carved stone tower under the spaces), depth}` in tiles. |
 | `camera` | array | Optional: the direction the camera looks at the board from, `[x, y, z]` (default `[0, 0.85, 0.55]`). |
+| `platforms` | object | Optional: moving platforms, id -> `{spaces: [ids], states: [{shift: [dx, dy], links: [[a, b], ...]}, ...], start}`. A platform's spaces sit at their own `x`, `y` moved by the current state's `shift`, and that state's `links` (both ways) join it to the board; a `switch` space moves it on to its next state. `start` is the first state (default 0). `look` is how it is drawn: `deck` (default: a steel deck on rails) or `island` (the spaces float on their own, with no deck or rails). See `tools/make_switch_board.pl` and `tools/make_drift_board.pl`. |
 | `blocks`      | object | Block id -> `{ "name", "color" }` (colour as `#rrggbb`). |
 | `spaces`      | array  | The spaces, see below. |
 
@@ -20,7 +21,7 @@ Each space:
 | Field   | Required for | Meaning |
 |---------|--------------|---------|
 | `id`    | all          | Must equal its index in the array. |
-| `type`  | all          | `depot`, `relay`, `lot`, `market`, `wildcard`, `workshop`, `toll`, `warp`, `detour`, `junction`, `dice`, `arcade`, `interest` (Star), `break` (Moon), `plot` (an empty building plot). |
+| `type`  | all          | `depot`, `relay`, `lot`, `market`, `wildcard`, `workshop`, `toll`, `warp`, `detour`, `junction`, `dice`, `arcade`, `interest` (Star), `break` (Moon), `plot` (an empty building plot), `switch` (a yellow button: landing on it moves its `platform`). |
 | `x`,`y` | all          | Grid position used for drawing (1 unit = one space). |
 | `next`  | all          | Ids you can move to from here; more than one = a branch. |
 | `block` | `lot`        | Block id. |
@@ -28,6 +29,7 @@ Each space:
 | `pair`  | `detour`, `warp` | Id of the Detour space this one warps to; for a warp pad, its partner (also in `next`). |
 | `at`    | optional     | 3D boards: world position in tiles, `[across, up, towards the camera]` (else `x`, 0, `y`). |
 | `face`  | optional     | 3D boards: `up` (default) or `front` (stood on a wall facing the camera)., or a direction `[x, y, z]` its top points (round a bottle). |
+| `platform` | `switch` | Id of the platform it moves. |
 | `mark`  | `relay`      | The suit: `Spade`, `Heart`, `Diamond` or `Club`. |
 | `color` | `relay`      | The relay's colour, `#rrggbb`. Each relay should have a distinct one. |
 | `name`  | optional     | Display name. |
@@ -46,8 +48,8 @@ home menu's board picker lists every `.json` in this folder, so a new board
 shows up there by itself.
 
 A map file has `key: value` lines (`name`, `goal`, `start_cash`,
-`base_salary`, `relay_bonus`, `theme` (the backdrop: sea, space, volcano,
-castle, racing or storm), and optionally `names:` a comma-separated list
+`base_salary`, `relay_bonus`, `theme` (the backdrop: sea, lagoon, space, volcano,
+castle, racing, storm or market), and optionally `names:` a comma-separated list
 of lot names, or `name_offset:` to start further along the built-in list),
 then `map:` and the board, one cell per space, cells separated by spaces.
 Cells next to each other (left, right, up, down) are linked both ways: you

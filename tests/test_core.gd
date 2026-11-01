@@ -9,6 +9,8 @@ var checks := 0
 func _init() -> void:
 	test_board_loads()
 	test_all_boards()
+	test_switches()
+	test_drifting_isles()
 	test_board_validation()
 	test_rent_and_blocks()
 	test_renovation()
@@ -273,6 +275,18 @@ func test_goal_win() -> void:
 	g.moves_left = 3
 	g.step(0)
 	check(g.game_over and g.winner == 0, "passing depot at goal wins")
+	# Short of the goal when the turn began, but at it on touching the Depot
+	# (here: money made during the turn): wins there and then.
+	g = new_game()
+	p = g.players[0]
+	g.start_turn()
+	check(not p.at_goal, "not at goal at turn start")
+	p.cash = 9000
+	p.position = 25
+	p.came_from = 24
+	g.moves_left = 3
+	g.step(0)
+	check(g.game_over and g.winner == 0 and g.moves_left == 2, "reaching the goal mid-turn wins at the depot")
 
 
 func test_wildcards() -> void:
@@ -812,15 +826,107 @@ func test_all_boards() -> void:
 				and count.get("interest", 0) == 1 and count.get("break", 0) == 1 \
 				and count.get("plot", 0) == 3 and count.get("dice", 0) == 2 \
 				and count.get("arcade", 0) == 1 and b.lot_ids().size() >= 12
+		# Reachable counting every place a moving platform can be in.
+		var extra := {}  # space id -> more links, from all platform states
+		for pid in b.platforms:
+			for st in b.platforms[pid].states:
+				for l in st.links:
+					extra[l[0]] = extra.get(l[0], []) + [l[1]]
+					extra[l[1]] = extra.get(l[1], []) + [l[0]]
 		var reached := {b.depot: true}
 		var queue: Array = [b.depot]
 		while not queue.is_empty():
-			for n in b.spaces[queue.pop_front()].next:
+			var at: int = queue.pop_front()
+			for n in b.spaces[at].next + extra.get(at, []):
 				if not reached.has(n):
 					reached[n] = true
 					queue.append(n)
 		check(ok and reached.size() == b.spaces.size(),
 				"%s: one Depot, four suits, Star, Moon, 3 plots, 2 Dice, Arcade, all reachable" % b.name)
+
+
+## Switch Yard: landing on a yellow switch slides its platform across, which
+## swaps the pod it joins to the ring; pressing again brings it back. A pod
+## left behind has its own switch to call the bridge back.
+func test_switches() -> void:
+	var g := GameState.new()
+	g.setup(Board.load_file("res://boards/switch_yard.json"), ["a", "b"], [false, false], 1)
+	var b := g.board
+	var sw := -1
+	for s in b.spaces:
+		if s.type == "switch" and s.platform == "top":
+			sw = s.id
+			break
+	var near: int = b.platforms.top.spaces[0]
+	var ring_a: int = b.platforms.top.states[0].links[0][0]
+	var ring_b: int = b.platforms.top.states[1].links[0][0]
+	check(sw >= 0 and ring_a in b.spaces[near].next and ring_b not in b.spaces[near].next,
+			"the top platform starts joined to its first pod's side")
+	var x0: float = b.spaces[near].x
+	var p := g.players[0]
+	p.position = sw
+	var offers := g.land()
+	check(offers.is_empty() and g.events[-1].kind == "switch" and g.events[-1].platform == "top",
+			"landing on a switch presses it")
+	check(ring_b in b.spaces[near].next and ring_a not in b.spaces[near].next and near in b.spaces[ring_b].next
+			and near not in b.spaces[ring_a].next and b.spaces[near].x == x0 + 4,
+			"pressed: the platform slides over and joins the other side")
+	g.land()
+	check(ring_a in b.spaces[near].next and b.spaces[near].x == x0, "pressed again: back where it was")
+	var heart := -1
+	for r in b.relay_ids():
+		if b.spaces[r].mark == "Heart":
+			heart = r
+	# The Heart pod (cut off now) holds a switch for the top bridge: whoever
+	# is left there can call it back.
+	var walked := {heart: true}
+	var queue: Array = [heart]
+	var call := -1
+	while not queue.is_empty():
+		for n in b.spaces[queue.pop_front()].next:
+			if b.spaces[n].type == "switch" and b.spaces[n].platform == "top":
+				call = n
+			if not walked.has(n):
+				walked[n] = true
+				queue.append(n)
+	check(walked.size() == 8 and call >= 0, "a pod cut off by its bridge is a loop of 8 with its own switch")
+	p.position = call
+	g.land()
+	var entrance: int = b.platforms.top.states[1].links[1][1]
+	check(entrance in walked and b.spaces[near].x == x0 + 4, "the pod's switch brings the bridge back to it")
+
+
+## Drifting Isles: the islands start docked against the ring; a switch on the
+## ring sends one out to sea, cut off (its spaces still go round in a loop),
+## and the one on the island sails it back in.
+func test_drifting_isles() -> void:
+	var g := GameState.new()
+	g.setup(Board.load_file("res://boards/drifting_isles.json"), ["a", "b"], [false, false], 1)
+	var b := g.board
+	var isle: Dictionary = b.platforms.north
+	var entrance: int = isle.spaces[0]
+	var dock: int = isle.states[1].links[0][0]
+	var on_ring := -1
+	var on_isle := -1
+	for s in b.spaces:
+		if s.type == "switch" and s.platform == "north":
+			if s.id in isle.spaces:
+				on_isle = s.id
+			else:
+				on_ring = s.id
+	check(isle.look == "island" and on_ring >= 0 and on_isle >= 0, "the north island has a switch on the ring and one aboard")
+	var y0: float = b.spaces[entrance].y
+	check(dock in b.spaces[entrance].next and entrance in b.spaces[dock].next,
+			"the islands start docked, joined to the ring")
+	var p := g.players[0]
+	p.position = on_ring
+	g.land()
+	check(dock not in b.spaces[entrance].next and entrance not in b.spaces[dock].next
+			and b.spaces[entrance].y == y0 + isle.states[0].shift.y, "the ring's switch sends the island out to sea")
+	check(b.spaces[entrance].next.size() == 2, "adrift, the island is still a loop")
+	p.position = on_isle
+	g.land()
+	check(dock in b.spaces[entrance].next and b.spaces[entrance].y == y0, "the island's own switch sails it back in")
 
 
 ## Every card in the pool resolves (with a CPU's pick) without breaking the

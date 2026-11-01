@@ -509,7 +509,7 @@ static func cpu_pick(g: GameState, p: PlayerState, id: int):
 					best = pair
 			return best
 		"warp_any":  # the Bank at goal, else the dearest lot it can buy, else the Star
-			if p.at_goal:
+			if g.wins_at_bank(p):
 				return g.board.depot
 			var buy := opts.filter(func(id): return (g.space(id).type == "lot" and g.lots[id].owner < 0
 					and g.lot_value(id) <= p.cash - Cpu.reserve(g, p)))
@@ -518,7 +518,7 @@ static func cpu_pick(g: GameState, p: PlayerState, id: int):
 			var star := opts.filter(func(id): return g.space(id).type == "interest")
 			return star[0] if not star.is_empty() else opts[0]
 		"warp_bank":  # only when it pays: at goal or with every suit
-			return true if p.at_goal or g.has_all_suits(p) else null
+			return true if g.wins_at_bank(p) or g.has_all_suits(p) else null
 		"warp_relay":
 			var r := _nearest_unpunched_relay(g, p)
 			return r if r >= 0 else opts[0]

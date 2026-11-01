@@ -1,10 +1,11 @@
 class_name Board
 extends RefCounted
-## A board loaded from JSON (format: boards/README.md). Read-only after loading.
+## A board loaded from JSON (format: boards/README.md). Read-only after
+## loading, except for its moving platforms (press, set_platform).
 
 const TYPES := ["depot", "relay", "lot", "market", "wildcard", "workshop",
 		"toll", "detour", "junction", "dice", "arcade",
-		"interest", "break", "plot", "warp"]
+		"interest", "break", "plot", "warp", "switch"]
 
 var name := ""
 var goal := 10000
@@ -20,6 +21,14 @@ var props: Array = []
 ## Which way the camera looks at the board from, [x, y, z] (optional).
 var camera: Array = []
 var depot := -1
+## Moving platforms: id -> {"spaces": [ids], "states": [{"shift": [dx, dy],
+## "links": [[a, b], ...]}, ...], "state": index}. A platform's spaces sit at
+## their own x, y moved by its state's shift, and its state's links (both
+## ways) join it to the board; a switch space (`platform`) moves it on to the
+## next state (press). The board changes during a game: each game loads its own.
+## "look" is how it is drawn: "deck" (steel on rails) or "island" (the spaces
+## float on their own, no deck or rails).
+var platforms := {}
 
 
 static func load_file(path: String) -> Board:
@@ -89,7 +98,9 @@ func load_data(data: Dictionary) -> String:
 			# its top points, e.g. outwards on the side of a bottle).
 			"at": s.get("at", []),
 			"face": s.get("face", "up"),  # "up", "front", or a direction [x, y, z]
+			"platform": str(s.get("platform", "")),  # a switch: the platform it moves
 		}
+		space.home = Vector2(space.x, space.y)  # where a platform's space sits before its shift
 		if type == "lot":
 			if not blocks.has(space.block):
 				return "lot %d has unknown block '%s'" % [i, space.block]
@@ -103,6 +114,30 @@ func load_data(data: Dictionary) -> String:
 
 	if depot == -1:
 		return "no depot"
+	var raw_platforms: Dictionary = data.get("platforms", {})
+	for pid in raw_platforms:
+		var p: Dictionary = raw_platforms[pid]
+		var ids: Array[int] = []
+		for id in p.get("spaces", []):
+			ids.append(int(id))
+		var states := []
+		for st in p.get("states", []):
+			var shift: Array = st.get("shift", [0, 0])
+			var links := []
+			for l in st.get("links", []):
+				var a := int(l[0])
+				var b := int(l[1])
+				if a < 0 or a >= spaces.size() or b < 0 or b >= spaces.size():
+					return "platform %s links missing spaces %d-%d" % [pid, a, b]
+				links.append([a, b])
+			states.append({"shift": Vector2(float(shift[0]), float(shift[1])), "links": links})
+		if ids.is_empty() or states.size() < 2:
+			return "platform %s needs spaces and at least two states" % pid
+		for id in ids:
+			if id < 0 or id >= spaces.size():
+				return "platform %s holds missing space %d" % [pid, id]
+		platforms[str(pid)] = {"spaces": ids, "states": states, "state": -1, "look": str(p.get("look", "deck"))}
+		set_platform(str(pid), int(p.get("start", 0)))
 	for s in spaces:
 		if s.next.is_empty():
 			return "space %d has no next space" % s.id
@@ -112,6 +147,59 @@ func load_data(data: Dictionary) -> String:
 		if s.type == "detour":
 			if s.pair < 0 or s.pair >= spaces.size() or spaces[s.pair].type != "detour":
 				return "detour %d has no valid pair" % s.id
+		if s.type == "switch" and not platforms.has(s.platform):
+			return "switch %d moves unknown platform '%s'" % [s.id, s.platform]
+	return ""
+
+
+## Moves platform `pid` to `state`: its last state's links go, the new
+## state's links join it (both ways) and its spaces move by the new shift.
+func set_platform(pid: String, state: int) -> void:
+	var p: Dictionary = platforms[pid]
+	if p.state >= 0:
+		for l in p.states[p.state].links:
+			spaces[l[0]].next.erase(l[1])
+			spaces[l[1]].next.erase(l[0])
+	p.state = state
+	var st: Dictionary = p.states[state]
+	for l in st.links:
+		if l[1] not in spaces[l[0]].next:
+			spaces[l[0]].next.append(l[1])
+		if l[0] not in spaces[l[1]].next:
+			spaces[l[1]].next.append(l[0])
+	for id in p.spaces:
+		var home: Vector2 = spaces[id].home
+		spaces[id].x = home.x + st.shift.x
+		spaces[id].y = home.y + st.shift.y
+
+
+## A switch is pressed: its platform moves on to its next state. Returns the
+## platform's id.
+func press(switch_id: int) -> String:
+	var pid: String = spaces[switch_id].platform
+	var p: Dictionary = platforms[pid]
+	set_platform(pid, (p.state + 1) % p.states.size())
+	return pid
+
+
+## Every place space `id` can be (x, y): where it is, or for a platform's
+## space, where each of its states puts it. Lets maps and the camera leave
+## room for a platform that is yet to move.
+func places(id: int) -> Array[Vector2]:
+	var pid := platform_of(id)
+	if pid == "":
+		return [Vector2(spaces[id].x, spaces[id].y)]
+	var out: Array[Vector2] = []
+	for st in platforms[pid].states:
+		out.append(spaces[id].home + st.shift)
+	return out
+
+
+## The platform space `id` rides on, or "".
+func platform_of(id: int) -> String:
+	for pid in platforms:
+		if id in platforms[pid].spaces:
+			return pid
 	return ""
 
 

@@ -8,7 +8,8 @@ extends Control
 ## As an `overlay` (the map always shown in a corner while playing) it sits on
 ## a dark panel, a bought lot is filled with its owner's colour, and special
 ## spaces carry a letter: B the Bank (Depot), ? a Wildcard, M a minigame
-## (Arcade), a star and a moon, V a vacant plot, and the Relays' suits.
+## (Arcade), a star and a moon, V a vacant plot, and the Relays' suits. A
+## switch is a ◉; a moving platform's spaces move on the map with it.
 
 const CELL := 26.0              # a space's size on a small board...
 const MAX_SIZE := Vector2(290, 200)  # ...shrunk so a big board still fits this
@@ -17,7 +18,7 @@ const PAD := 6.0
 const OVERLAY_SIZE := Vector2(240, 170)  # the corner map stays this small
 ## Letters on special spaces in the overlay.
 const LETTERS := {"depot": "B", "wildcard": "?", "arcade": "M", "interest": "★", "break": "☾",
-		"dice": "D", "market": "$", "warp": "W"}
+		"dice": "D", "market": "$", "warp": "W", "switch": "◉"}
 
 var game: GameState
 var focus := ""
@@ -32,7 +33,8 @@ func show_board(g: GameState) -> void:
 	game = g
 	var extent := Vector2.ZERO
 	for s in game.board.spaces:
-		extent = extent.max(Vector2(s.x, s.y))
+		for at in game.board.places(s.id):  # room for platforms out in their other places
+			extent = extent.max(at)
 	var spaces := extent + Vector2.ONE
 	var most := OVERLAY_SIZE if overlay else MAX_SIZE
 	var fit := minf(most.x / spaces.x, most.y / spaces.y)  # cell plus gap

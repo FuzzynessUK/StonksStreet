@@ -4,8 +4,8 @@
 #   perl tools/make_boards.pl
 #
 # A map file has "key: value" lines (name, goal, start_cash, base_salary,
-# relay_bonus, theme (the backdrop: sea, space, volcano, castle, racing or
-# storm), and optionally names: a comma-separated list of lot names),
+# relay_bonus, theme (the backdrop: sea, lagoon, space, volcano, castle,
+# racing, storm or market), and optionally names: a comma-separated list of lot names),
 # then "map:" and the board drawn one cell per space, cells separated by
 # spaces. Spaces next to each other (left/right/up/down) are linked both ways,
 # so you can walk either way and turn round at a dead end.

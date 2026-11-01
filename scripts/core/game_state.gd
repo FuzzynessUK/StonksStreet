@@ -282,6 +282,12 @@ func current_player() -> PlayerState:
 	return players[current]
 
 
+## Whether p wins on touching the Depot now: net worth at the goal now (the
+## PAYDAY just collected there counts), or at it when this turn began.
+func wins_at_bank(p: PlayerState) -> bool:
+	return p.at_goal or net_worth(p) >= board.goal
+
+
 func start_turn() -> void:
 	var p := current_player()
 	p.at_goal = net_worth(p) >= board.goal
@@ -390,7 +396,7 @@ func _pass(p: PlayerState, id: int) -> void:
 			else:
 				_note("%s has %d of %d suits: no PAYDAY yet" % [p.name, suit_count(p),
 						board.relay_ids().size()], "info", p.index, id)
-			if p.at_goal:
+			if wins_at_bank(p):  # the move stops here: no ending the turn first
 				winner = p.index
 				game_over = true
 				_note("%s reaches the Depot at goal and wins!" % p.name, "win", p.index, id)
@@ -456,6 +462,10 @@ func land() -> Array[Dictionary]:
 			p.came_from = id
 			p.position = s.pair
 			_note("%s takes the detour to %s" % [p.name, _label(s.pair)], "info", p.index, s.pair)
+		"switch":  # a yellow button: its platform slides on, and the routes change
+			var pid := board.press(id)
+			_note("%s presses the switch: a platform slides across" % p.name, "switch", p.index, id)
+			events[-1]["platform"] = pid
 	return offers
 
 

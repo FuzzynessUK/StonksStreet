@@ -50,6 +50,8 @@ const REST := -1
 const _H := HOLD
 const _R := REST
 
+const CALM_ON := false  # the journey loop is switched off for now (too dull): set true to bring it back
+
 ## The journey: unhurried, in D major. Flute over harp and strings, a plucked
 ## bass and a soft walking beat. Eight bars, about 24 seconds.
 const CALM := {
@@ -253,9 +255,11 @@ func _ready() -> void:
 	_casino = _player()
 	_race = _player()
 	_fanfare = _player()
+	_fanfare.bus = Settings.BUSES.sfx  # a stinger marks an event: heard with the music off too
 	_fanfare.volume_db = VOLUME_DB + 2.0
 	_fanfare.finished.connect(_unduck)
-	_tasks.append(WorkerThreadPool.add_task(func(): _calm_wav = song_clip("calm", CALM)))
+	if CALM_ON:  # switched off for now: no music on the home menu and in normal play
+		_tasks.append(WorkerThreadPool.add_task(func(): _calm_wav = song_clip("calm", CALM)))
 	_tasks.append(WorkerThreadPool.add_task(func(): _intense_wav = song_clip("intense", INTENSE)))
 	_tasks.append(WorkerThreadPool.add_task(func(): _casino_wav = song_clip("casino", CASINO)))
 	_tasks.append(WorkerThreadPool.add_task(func(): _race_wav = song_clip("race", RACE)))
@@ -343,14 +347,16 @@ func _switch() -> void:
 	for p in [_calm, _intense, _bonus, _casino, _race]:
 		if p != to and p.playing:
 			others.append(p)
-	if to.stream == null:
-		for p in others:
-			p.stop()
-		return  # still rendering: it starts by itself once ready
-	to.volume_db = SILENT_DB
-	to.play()
+	# A loop with no stream (still rendering, or the Journey loop while it is
+	# switched off) is silence: the others just fade out. A rendering one
+	# starts by itself once ready.
+	if to.stream == null and others.is_empty():
+		return
 	_fade = create_tween().set_parallel()
-	_fade.tween_property(to, "volume_db", VOLUME_DB, FADE * 0.5)
+	if to.stream != null:
+		to.volume_db = SILENT_DB
+		to.play()
+		_fade.tween_property(to, "volume_db", VOLUME_DB, FADE * 0.5)
 	for p in others:
 		_fade.tween_property(p, "volume_db", SILENT_DB, FADE * 0.6)
 	_fade.chain().tween_callback(func():

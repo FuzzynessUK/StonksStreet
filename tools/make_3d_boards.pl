@@ -1,10 +1,10 @@
 #!/usr/bin/perl
 # Builds the 3D boards whose spaces don't lie on one flat grid:
 #
-#   boards/island_hop.json   a beach island with the Bank, and four giant
-#                            turtles round it carrying spaces on their shells,
+#   boards/island_hop.json   Cloud Hop: a ring with the Bank floating on its
+#                            own, and four big clouds round it carrying spaces,
 #                            each at its own height, joined only by warp pads;
-#                            a suit on each turtle
+#                            a suit on each cloud
 #   boards/bottle.json       a giant glass bottle in space: a ring of spaces
 #                            round its base (the Bank), a path spiralling twice
 #                            up the outside of the glass to a ring round its
@@ -107,21 +107,33 @@ sub write_board {
 		join(", ", map { "$types{$_} $_" } sort keys %types), $file;
 }
 
-# --- Turtle Islands -------------------------------------------------------
-# Round everything: a circle of 16 spaces on a round beach island in the
-# middle, and four giant turtles round it, each carrying a circle of 8 spaces
-# on its shell, a warp pad facing the beach. Angles run from the front (+z)
+# --- Cloud Hop ------------------------------------------------------------
+# Round everything: a circle of 16 spaces on a stone tower in the middle
+# (rising out of the clouds), and four big clouds round it, each carrying a circle of
+# 8 spaces, a warp pad facing the middle. Angles run from the front (+z)
 # towards the right (+x).
 reset_board(A => 120, B => 180, C => 240, D => 160, E => 300, F => 260, G => 220);
 my ($CX, $CZ) = (2, 2);  # the middle of it all, in tiles
 my $GAP = 1.2;  # tiles of circle between neighbouring spaces
 # A circle of `cells` round (x, h, z), the first at angle `a0`; map positions
-# from a ring(mw, md) at map (mx, my) so the minimap shows a loop.
+# from a ring(mw, md) at map (mx, my) so the minimap shows a loop. Each space
+# takes the ring cell at its own angle round the middle (map x = world x, map
+# y = world z), so the map is neither mirrored nor turned against the board.
 sub circle {
 	my ($cells, $x, $h, $z, $a0, $mx, $my, $mw, $md) = @_;
 	my $n = @$cells;
 	my $r = $n * $GAP / (2 * 3.14159265);
-	my @map = ring($mw, $md);
+	my @ring = ring($mw, $md);
+	die "circle: $n cells for " . scalar(@ring) . " ring spots\n" unless @ring == $n;
+	my ($cx, $cy) = (($mw - 1) / 2, ($md - 1) / 2);
+	my $tau = 2 * 3.14159265;
+	my $from_a0 = sub {  # angle of a ring cell past a0, 0 to a full turn
+		my $t = atan2($_[0][0] - $cx, $_[0][1] - $cy) - $a0;
+		$t -= $tau while $t >= $tau - 1e-6;
+		$t += $tau while $t < -1e-6;
+		return $t;
+	};
+	my @map = sort { $from_a0->($a) <=> $from_a0->($b) } @ring;
 	my @ids;
 	for my $i (0 .. $n - 1) {
 		my $a = $a0 + 2 * 3.14159265 * $i / $n;
@@ -136,26 +148,25 @@ my $PI = 3.14159265;
 my @mid = circle([cell("warp"), lot("C"), cell("dice"), lot("C"), cell("warp"), lot("B"), lot("B"), cell("wildcard"),
 	cell("warp"), lot("B"), lot("A"), lot("A"), cell("warp"), lot("A"), cell("depot"), lot("C")],
 	$CX, 0, $CZ, 0, 6, 6, 5, 5);
-# The turtles, 8.4 tiles out, each with its warp pad (first) facing the middle.
+# The clouds, 8.4 tiles out, each with its warp pad (first) facing the middle.
 my $OUT = 8.4;
-my %turtle = (
-	front => [0, -0.5, [cell("warp"), lot("G"), cell("plot"), lot("G"), relay("Club"), lot("G"), cell("interest"), lot("G")], 7, 13],
+my %cloud = (
+	front => [0, -0.5, [cell("warp"), lot("G"), cell("plot"), lot("G"), relay("Club"), lot("G"), cell("interest"), lot("G")], 7, 14],
 	right => [$PI / 2, 0.8, [cell("warp"), lot("F"), relay("Diamond"), lot("F"), cell("break"), lot("F"), cell("wildcard"), lot("F")], 14, 7],
 	back => [$PI, 1.3, [cell("warp"), lot("E"), relay("Heart"), lot("E"), lot("E"), cell("arcade"), lot("E"), cell("plot")], 7, 0],
 	left => [3 * $PI / 2, 0.4, [cell("warp"), lot("D"), cell("plot"), relay("Spade"), lot("D"), lot("D"), cell("dice"), lot("D")], 0, 7],
 );
-my @props = ({ kind => "isle", at => [$CX, 0, $CZ], size => [8.4, 8.4] });
+my @props = ({ kind => "sky_tower", at => [$CX, 0, $CZ], radius => 4.2 });  # the middle on a tall stone tower
 my $k = 0;
 for my $side (qw(front right back left)) {
-	my ($a, $h, $cells, $mx, $my) = @{ $turtle{$side} };
+	my ($a, $h, $cells, $mx, $my) = @{ $cloud{$side} };
 	my ($tx, $tz) = ($CX + sin($a) * $OUT, $CZ + cos($a) * $OUT);
 	my @ring = circle($cells, $tx, $h, $tz, $a + $PI, $mx, $my, 3, 3);  # first space faces the middle
 	warp_pair($mid[$k * 4], $ring[0]);
-	push @props, { kind => "turtle", at => [sprintf("%.3f", $tx), $h, sprintf("%.3f", $tz)], radius => 3.1,
-		heading => [sprintf("%.3f", sin($a)), 0, sprintf("%.3f", cos($a))] };
+	push @props, { kind => "cloud", at => [sprintf("%.3f", $tx), $h, sprintf("%.3f", $tz)], radius => 3.1 };
 	$k++;
 }
-write_board("island_hop.json", "Turtle Islands", "lagoon", \@props);
+write_board("island_hop.json", "Cloud Hop", "sky", \@props);
 
 # --- Lost Bottle ---------------------------------------------------------
 # The whole board wraps round the glass: two rings of 16 spaces round the
